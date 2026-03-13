@@ -18,6 +18,7 @@ This repo now uses a Python + uv stack for better runtime stability and dependen
 - FastAPI service in `contexthub/`
 - SQLite storage schema in `contexthub/store.py`
 - Core objects: tenants, partitions, agents, records, sessions
+- Explicit `L0/L1/L2` layer model on records and query filters
 - Retrieval pipeline with lexical score + optional embeddings + optional rerank
 - Python client SDK in `contexthub/client.py`
 - Architecture/API docs in `docs/`
@@ -80,6 +81,7 @@ GitHub Actions runs the same secret scan and pytest on every push/PR.
 - [x] Keep Node MVP as legacy snapshot under `legacy/node-mvp/`
 - [x] Add Python CI workflow with uv
 - [x] Add Python-based secrets scan in CI/local
+- [x] Make `L0/L1/L2` explicit in the backend data model
 - [ ] Add OpenClaw adapter examples + one-command helper scripts
 - [ ] Add Codex and Claude Code adapter examples
 - [ ] Add first-pass auth and partition ACL enforcement
@@ -106,6 +108,8 @@ docs/
   architecture.md
   api.md
   openapi.yaml
+  layer-model.md
+  execution-plan.md
   agent-integration.md
   roadmap.md
   stack-decision.md
@@ -117,3 +121,5 @@ legacy/
 
 - Legacy Node MVP is preserved in `legacy/node-mvp/` for design reference and migration diff.
 - The current implementation keeps API shape close to the original MVP to reduce adapter churn.
+- Layer mapping is documented in `docs/layer-model.md`.
+- Next-step rollout order is documented in `docs/execution-plan.md`.

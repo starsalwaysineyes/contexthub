@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS records (
   tenant_id TEXT NOT NULL,
   partition_key TEXT NOT NULL,
   type TEXT NOT NULL,
+  layer TEXT NOT NULL DEFAULT 'l1',
   title TEXT NOT NULL,
   text TEXT NOT NULL,
   source TEXT,
@@ -101,6 +102,19 @@ class SQLiteStore:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as conn:
             conn.executescript(SCHEMA)
+            self._apply_migrations(conn)
+
+    def _apply_migrations(self, conn: sqlite3.Connection) -> None:
+        record_columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(records)").fetchall()
+        }
+        if "layer" not in record_columns:
+            conn.execute("ALTER TABLE records ADD COLUMN layer TEXT NOT NULL DEFAULT 'l1'")
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_records_tenant_partition_layer ON records (tenant_id, partition_key, layer)"
+        )
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:

@@ -94,7 +94,13 @@ A record can represent:
 - note
 - summary
 
-Each record keeps curated metadata such as `importance`, `pinned`, `tags`, and `manualSummary`.
+Each record keeps curated metadata such as `layer`, `importance`, `pinned`, `tags`, and `manualSummary`.
+
+The `layer` field is the explicit bridge to the user's working model:
+
+- `l0` = quick memory pointer / recall anchor
+- `l1` = curated archive / detail summary
+- `l2` = raw source material / low-abstraction resource
 
 ### Chunk
 

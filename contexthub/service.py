@@ -184,6 +184,7 @@ class HubService:
                 "tenant_id": payload.tenant_id,
                 "partition_key": partition_key,
                 "type": normalize_key(payload.type),
+                "layer": normalize_key(payload.layer),
                 "title": payload.title.strip(),
                 "text": payload.text.strip(),
                 "source": to_json(payload.source) if payload.source is not None else None,
@@ -199,15 +200,16 @@ class HubService:
             conn.execute(
                 """
                 INSERT INTO records (
-                  id, tenant_id, partition_key, type, title, text, source, tags, metadata,
+                  id, tenant_id, partition_key, type, layer, title, text, source, tags, metadata,
                   manual_summary, importance, pinned, idempotency_key, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record["id"],
                     record["tenant_id"],
                     record["partition_key"],
                     record["type"],
+                    record["layer"],
                     record["title"],
                     record["text"],
                     record["source"],
@@ -283,6 +285,7 @@ class HubService:
                         tenantId=payload.tenant_id,
                         partitionKey=partition_key,
                         type=entry.type,
+                        layer=entry.layer,
                         title=entry.title,
                         text=entry.text,
                         manualSummary=entry.manual_summary or payload.summary,
@@ -324,6 +327,7 @@ class HubService:
                 }
 
             types = [normalize_key(item) for item in payload.types if item.strip()]
+            layers = [normalize_key(item) for item in payload.layers if item.strip()]
             clauses = ["records.tenant_id = ?"]
             parameters: list[Any] = [payload.tenant_id]
 
@@ -335,6 +339,11 @@ class HubService:
                 type_placeholders = ", ".join("?" for _ in types)
                 clauses.append(f"records.type IN ({type_placeholders})")
                 parameters.extend(types)
+
+            if layers:
+                layer_placeholders = ", ".join("?" for _ in layers)
+                clauses.append(f"records.layer IN ({layer_placeholders})")
+                parameters.extend(layers)
 
             rows = conn.execute(
                 f"""
@@ -411,6 +420,7 @@ class HubService:
                 "chunkId": item["chunkId"],
                 "title": item["record"]["title"],
                 "type": item["record"]["type"],
+                "layer": item["record"]["layer"],
                 "partitionKey": item["record"]["partitionKey"],
                 "score": round(item["score"], 6),
                 "snippet": item["chunkText"],
@@ -500,6 +510,7 @@ class HubService:
             "tenantId": record["tenant_id"],
             "partitionKey": record["partition_key"],
             "type": record["type"],
+            "layer": record.get("layer", "l1"),
             "title": record["title"],
             "text": record["text"],
             "source": from_json(record.get("source"), None),

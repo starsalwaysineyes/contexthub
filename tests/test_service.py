@@ -66,6 +66,7 @@ def test_query_returns_relevant_record(tmp_path: Path) -> None:
             tenantId=tenant["id"],
             partitionKey="memory",
             type="memory",
+            layer="l0",
             title="Memory retrieval",
             text="ContextHub should help every agent reuse memory safely.",
             importance=5,
@@ -84,6 +85,7 @@ def test_query_returns_relevant_record(tmp_path: Path) -> None:
 
     assert len(result["items"]) == 1
     assert result["items"][0]["title"] == "Memory retrieval"
+    assert result["items"][0]["layer"] == "l0"
     assert result["retrieval"]["usedEmbeddings"] is True
 
 
@@ -105,6 +107,7 @@ def test_commit_session_materializes_memory(tmp_path: Path) -> None:
             memoryEntries=[
                 {
                     "title": "Architecture direction",
+                    "layer": "l1",
                     "text": "Prefer manual curation first and controlled cross-partition retrieval.",
                     "importance": 4,
                 }
@@ -113,6 +116,7 @@ def test_commit_session_materializes_memory(tmp_path: Path) -> None:
     )
 
     assert len(commit["createdMemories"]) == 1
+    assert commit["createdMemories"][0]["layer"] == "l1"
 
     result = service.query(
         QueryRequest(
@@ -124,6 +128,45 @@ def test_commit_session_materializes_memory(tmp_path: Path) -> None:
 
     assert len(result["items"]) == 1
     assert result["items"][0]["title"] == "Architecture direction"
+
+
+def test_query_can_filter_by_layer(tmp_path: Path) -> None:
+    service = build_service(tmp_path)
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo", name="Demo"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+    service.create_record(
+        CreateRecordRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="memory",
+            layer="l0",
+            title="Daily note",
+            text="Short memory pointer for today.",
+        )
+    )
+    service.create_record(
+        CreateRecordRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="resource",
+            layer="l2",
+            title="Raw transcript",
+            text="Full transcript with all raw details.",
+        )
+    )
+
+    result = service.query(
+        QueryRequest(
+            tenantId=tenant["id"],
+            query="raw details",
+            partitions=["memory"],
+            layers=["l2"],
+        )
+    )
+
+    assert len(result["items"]) == 1
+    assert result["items"][0]["layer"] == "l2"
+    assert result["items"][0]["title"] == "Raw transcript"
 
 
 def test_health_route(tmp_path: Path, monkeypatch) -> None:

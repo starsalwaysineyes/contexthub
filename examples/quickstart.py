@@ -23,6 +23,7 @@ def main() -> None:
             "tenantId": tenant["id"],
             "partitionKey": "project-openclaw",
             "type": "memory",
+            "layer": "l1",
             "title": "ContextHub direction",
             "text": "Single instance multi-tenant, manual curation first, optional rerank.",
             "importance": 4,

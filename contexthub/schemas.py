@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+RecordLayer = Literal["l0", "l1", "l2"]
 
 
 class CreateTenantRequest(BaseModel):
@@ -31,6 +33,7 @@ class CreateRecordRequest(BaseModel):
     tenant_id: str = Field(alias="tenantId")
     partition_key: str = Field(alias="partitionKey")
     type: str
+    layer: RecordLayer = "l1"
     title: str
     text: str
     source: dict[str, Any] | None = None
@@ -47,12 +50,14 @@ class QueryRequest(BaseModel):
     query: str
     partitions: list[str] = Field(default_factory=list)
     types: list[str] = Field(default_factory=list)
+    layers: list[RecordLayer] = Field(default_factory=list)
     limit: int | None = None
     rerank: bool | None = None
 
 
 class MemoryEntry(BaseModel):
     type: str = "memory"
+    layer: RecordLayer = "l0"
     title: str
     text: str
     manual_summary: str = Field(default="", alias="manualSummary")

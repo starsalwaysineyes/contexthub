@@ -5,6 +5,7 @@
 - JSON request and response bodies
 - caller supplies `tenantId`
 - partition is addressed by `partitionKey`
+- record layer is explicit via `layer`
 - item citations come back as `recordId` + `chunkId`
 
 ## `GET /health`
@@ -69,6 +70,7 @@ Request:
   "tenantId": "tenant_xxx",
   "partitionKey": "project-openclaw",
   "type": "memory",
+  "layer": "l1",
   "title": "Architecture direction",
   "text": "Prefer manual curation first and explicit cross-partition controls.",
   "manualSummary": "First-pass backend direction",
@@ -81,6 +83,7 @@ Request:
 
 Notes:
 
+- `layer` should be one of `l0`, `l1`, `l2`
 - the body is chunked automatically
 - embeddings are attached if the provider is configured
 - `idempotencyKey` is the simplest way to avoid duplicate writes from multiple agents
@@ -97,6 +100,7 @@ Request:
   "query": "manual curation and multi-agent retrieval",
   "partitions": ["project-openclaw", "memory"],
   "types": ["memory", "resource"],
+  "layers": ["l0", "l1"],
   "limit": 5,
   "rerank": true
 }
@@ -112,6 +116,7 @@ Response shape:
       "chunkId": "chunk_xxx",
       "title": "Architecture direction",
       "type": "memory",
+      "layer": "l1",
       "partitionKey": "project-openclaw",
       "score": 0.91,
       "snippet": "Prefer manual curation first...",
@@ -158,6 +163,7 @@ Request:
   "memoryEntries": [
     {
       "title": "Storage direction",
+      "layer": "l0",
       "text": "Use local disk first, remote embedding, optional rerank.",
       "importance": 4,
       "tags": ["storage", "embedding"]
@@ -167,6 +173,12 @@ Request:
 ```
 
 This endpoint is the bridge between conversational work and durable context.
+
+Recommended default:
+
+- use `memoryEntries.layer = "l0"` for quick recall pointers
+- use `POST /v1/records` with `layer = "l1"` for curated archive entries
+- use `POST /v1/records` with `layer = "l2"` for raw source materials
 
 ## Next API extensions
 
