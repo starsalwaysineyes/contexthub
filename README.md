@@ -26,6 +26,7 @@ This repo now uses a Python + uv stack for better runtime stability and dependen
 - Retrieval pipeline with lexical score + optional embeddings + optional rerank
 - Python client SDK in `contexthub/client.py`
 - Adapter helper module and example scripts for OpenClaw/Codex/Claude Code
+- Test-server deployment bootstrap script + systemd unit template
 - Architecture/API docs in `docs/`
 
 ## Quick start (uv)
@@ -118,7 +119,8 @@ GitHub Actions runs the same secret scan and pytest on every push/PR.
 - [x] Add Markdown/archive ingestion jobs
 - [x] Persist derivation lineage (`derivation_jobs` + `record_links`)
 - [x] Add first-pass real async derivation execution via persisted jobs
-- [ ] Deploy first managed instance to target server
+- [x] Deploy first managed instance bootstrap to target server (`systemd` + health/write/query smoke)
+- [ ] Configure remote provider env and validate successful derive path on server
 
 ## Repo layout
 
@@ -137,10 +139,13 @@ contexthub/
   text.py
 scripts/
   check_secrets.py
+  deploy-test-server.sh
   openclaw-query.sh
   openclaw-commit.sh
   codex-commit.sh
   claude-code-commit.sh
+deploy/
+  contexthub.service
 docs/
   architecture.md
   api.md
@@ -150,6 +155,7 @@ docs/
   upload-derivation-design.md
   import-jobs.md
   adapter-examples.md
+  deploy-test-server.md
   execution-plan.md
   agent-integration.md
   roadmap.md

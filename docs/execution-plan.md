@@ -52,6 +52,13 @@ Target server:
 
 - `root@38.55.39.92 -p 2222`
 
+Current status:
+
+- baseline bootstrap is done: `uv` + Python 3.12 + repo sync + `systemd` service (`contexthub`) + localhost health check
+- smoke write/query on server is validated
+- async derive job status lifecycle is validated (`queued/running/failed`) under missing-provider configuration
+- next: fill remote provider env, validate successful derive path, then import selected local materials
+
 Migration scope should include:
 
 - ContextHub service
