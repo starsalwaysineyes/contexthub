@@ -20,6 +20,8 @@ This repo now uses a Python + uv stack for better runtime stability and dependen
 - Core objects: tenants, partitions, agents, principals, ACL rules, records, sessions
 - Explicit `L0/L1/L2` layer model on records and query filters
 - First-pass bearer auth + partition ACL
+- Import MVP: `POST /v1/resources/import` (`inline_text`)
+- Optional sync abstraction via LiteLLM for derived `L1/L0`
 - Retrieval pipeline with lexical score + optional embeddings + optional rerank
 - Python client SDK in `contexthub/client.py`
 - Architecture/API docs in `docs/`
@@ -49,6 +51,7 @@ Default endpoints:
 - `POST /v1/principals`
 - `POST /v1/principals/{principalId}/acl`
 - `POST /v1/records`
+- `POST /v1/resources/import`
 - `POST /v1/query`
 - `POST /v1/sessions/commit`
 
@@ -93,6 +96,7 @@ GitHub Actions runs the same secret scan and pytest on every push/PR.
 - [x] Make `L0/L1/L2` explicit in the backend data model
 - [x] Finish upload + derivation design with LiteLLM as the abstraction gateway
 - [x] Add first-pass auth and partition ACL enforcement
+- [x] Implement `POST /v1/resources/import` MVP (`inline_text` + optional sync derivation)
 - [ ] Add OpenClaw adapter examples + one-command helper scripts
 - [ ] Add Codex and Claude Code adapter examples
 - [ ] Add Markdown/archive ingestion jobs

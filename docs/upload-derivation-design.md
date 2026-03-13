@@ -15,6 +15,21 @@ This is the missing bridge between:
 - future import jobs
 - future OpenClaw plugin automation
 
+## Current MVP status
+
+Implemented now:
+
+- `POST /v1/resources/import`
+- `content.kind = inline_text`
+- optional derivation through LiteLLM abstraction client
+- `mode=async` currently accepted but executed as sync (`effectiveMode=sync`)
+
+Still pending:
+
+- async job queue and retry model
+- file/path/blob import kinds
+- record link and derivation job tables
+
 ## Core rules
 
 - Caller chooses the target layer explicitly.
@@ -212,8 +227,8 @@ This design is important because the future plugin can do:
 ## Implementation order
 
 1. keep this as design only for now
-2. implement first-pass auth + partition ACL
-3. implement `resources/import` with `inline_text`
-4. add LiteLLM abstraction client
-5. add async derivation jobs
+2. implement first-pass auth + partition ACL (done)
+3. implement `resources/import` with `inline_text` (done)
+4. add LiteLLM abstraction client (done, sync path)
+5. add async derivation jobs (next)
 6. expose plugin-facing helper endpoints

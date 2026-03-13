@@ -14,6 +14,9 @@ class ContextHubClient:
     def health(self) -> dict[str, Any]:
         return self._request("GET", "/health")
 
+    def auth_me(self) -> dict[str, Any]:
+        return self._request("GET", "/v1/auth/me")
+
     def create_tenant(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/tenants", payload)
 
@@ -23,8 +26,17 @@ class ContextHubClient:
     def register_agent(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/agents", payload)
 
+    def create_principal(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/principals", payload)
+
+    def upsert_principal_acl(self, principal_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", f"/v1/principals/{principal_id}/acl", payload)
+
     def create_record(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/records", payload)
+
+    def import_resource(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/resources/import", payload)
 
     def query(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/query", payload)

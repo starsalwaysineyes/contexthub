@@ -26,33 +26,11 @@ Admin-only.
 
 Create or return a tenant by slug.
 
-Request:
-
-```json
-{
-  "slug": "openclaw-china",
-  "name": "OpenClaw China",
-  "description": "Shared context space for agent experiments"
-}
-```
-
 ## `POST /v1/partitions`
 
 Admin-only.
 
 Create or return a partition inside a tenant.
-
-Request:
-
-```json
-{
-  "tenantId": "tenant_xxx",
-  "key": "project-openclaw",
-  "name": "Project OpenClaw",
-  "kind": "project",
-  "description": "Implementation notes and shipped decisions"
-}
-```
 
 ## `POST /v1/agents`
 
@@ -60,37 +38,11 @@ Admin-only.
 
 Register an agent caller.
 
-Request:
-
-```json
-{
-  "tenantId": "tenant_xxx",
-  "name": "openclaw-main",
-  "kind": "assistant",
-  "metadata": {
-    "channel": "discord"
-  }
-}
-```
-
 ## `POST /v1/principals`
 
 Admin-only.
 
 Create a caller principal and return its bearer token once.
-
-Request:
-
-```json
-{
-  "tenantId": "tenant_xxx",
-  "name": "openclaw-main",
-  "kind": "service",
-  "metadata": {
-    "channel": "discord"
-  }
-}
-```
 
 ## `POST /v1/principals/{principalId}/acl`
 
@@ -98,38 +50,9 @@ Admin-only.
 
 Create or update partition-level ACL for a principal.
 
-Request:
-
-```json
-{
-  "partitionKey": "memory",
-  "canRead": true,
-  "canWrite": true,
-  "allowedLayers": ["l0", "l1"]
-}
-```
-
 ## `POST /v1/records`
 
 Store a curated record.
-
-Request:
-
-```json
-{
-  "tenantId": "tenant_xxx",
-  "partitionKey": "project-openclaw",
-  "type": "memory",
-  "layer": "l1",
-  "title": "Architecture direction",
-  "text": "Prefer manual curation first and explicit cross-partition controls.",
-  "manualSummary": "First-pass backend direction",
-  "importance": 4,
-  "pinned": true,
-  "tags": ["architecture", "retrieval"],
-  "idempotencyKey": "project-openclaw:architecture-direction:v1"
-}
-```
 
 Notes:
 
@@ -139,59 +62,62 @@ Notes:
 - `idempotencyKey` is the simplest way to avoid duplicate writes from multiple agents
 - when auth is enabled, caller must have `canWrite=true` on the target partition
 
-## `POST /v1/query`
+## `POST /v1/resources/import`
 
-Search within a tenant and selected partitions.
+Import a resource into a target layer and optionally derive abstraction layers.
 
-Request:
+Current MVP supports:
+
+- `content.kind = "inline_text"`
+- optional derivation via LiteLLM in sync mode (requested async is accepted but executed as sync in current MVP)
+
+Request example:
 
 ```json
 {
   "tenantId": "tenant_xxx",
-  "query": "manual curation and multi-agent retrieval",
-  "partitions": ["project-openclaw", "memory"],
-  "types": ["memory", "resource"],
-  "layers": ["l0", "l1"],
-  "limit": 5,
-  "rerank": true
-}
-```
-
-Response shape:
-
-```json
-{
-  "items": [
-    {
-      "recordId": "record_xxx",
-      "chunkId": "chunk_xxx",
-      "title": "Architecture direction",
-      "type": "memory",
-      "layer": "l1",
-      "partitionKey": "project-openclaw",
-      "score": 0.91,
-      "snippet": "Prefer manual curation first...",
-      "manualSummary": "First-pass backend direction",
-      "source": null,
-      "tags": ["architecture"],
-      "createdAt": "2026-03-13T12:00:00.000Z",
-      "trace": {
-        "lexical": 0.75,
-        "vector": 0.89,
-        "manual": 0.86,
-        "recency": 1,
-        "rerank": 0.93
-      }
-    }
-  ],
-  "retrieval": {
-    "candidateCount": 12,
-    "scoredCount": 5,
-    "usedEmbeddings": true,
-    "usedRerank": true
+  "partitionKey": "project-openclaw",
+  "type": "resource",
+  "targetLayer": "l2",
+  "title": "Raw meeting transcript",
+  "content": {
+    "kind": "inline_text",
+    "text": "Full raw transcript..."
+  },
+  "derive": {
+    "enabled": true,
+    "mode": "sync",
+    "emitLayers": ["l1", "l0"],
+    "provider": "litellm",
+    "promptPreset": "archive_and_memory"
   }
 }
 ```
+
+Response example:
+
+```json
+{
+  "record": {
+    "id": "record_source_xxx",
+    "layer": "l2"
+  },
+  "derivation": {
+    "status": "completed",
+    "mode": "sync",
+    "effectiveMode": "sync",
+    "plannedLayers": ["l1", "l0"],
+    "records": [
+      { "id": "record_l1_xxx", "layer": "l1" },
+      { "id": "record_l0_xxx", "layer": "l0" }
+    ]
+  }
+}
+```
+
+## `POST /v1/query`
+
+Search within a tenant and selected partitions.
 
 Auth notes:
 
@@ -203,34 +129,6 @@ Auth notes:
 
 Persist a session and optionally emit curated memories.
 
-Request:
-
-```json
-{
-  "tenantId": "tenant_xxx",
-  "partitionKey": "project-openclaw",
-  "agentId": "agent_xxx",
-  "summary": "Settled on single-instance multi-tenant design.",
-  "messages": [
-    {
-      "role": "user",
-      "content": "We should keep manual control over important memories."
-    }
-  ],
-  "memoryEntries": [
-    {
-      "title": "Storage direction",
-      "layer": "l0",
-      "text": "Use local disk first, remote embedding, optional rerank.",
-      "importance": 4,
-      "tags": ["storage", "embedding"]
-    }
-  ]
-}
-```
-
-This endpoint is the bridge between conversational work and durable context.
-
 Recommended default:
 
 - use `memoryEntries.layer = "l0"` for quick recall pointers
@@ -240,7 +138,6 @@ Recommended default:
 ## Next API extensions
 
 - `GET /v1/catalog`
-- `POST /v1/resources/import`
 - `POST /v1/query/plan`
 - `POST /v1/records/bulk`
 - `POST /v1/attachments`

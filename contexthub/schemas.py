@@ -5,6 +5,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 RecordLayer = Literal["l0", "l1", "l2"]
+DeriveMode = Literal["sync", "async"]
+DeriveStrategy = Literal["preserve_manual", "create_sidecar", "replace_derived_only"]
+PromptPreset = Literal["archive_and_memory", "memory_only", "archive_only"]
+ImportContentKind = Literal["inline_text", "markdown_file", "external_ref", "blob_ref"]
 
 
 class CreateTenantRequest(BaseModel):
@@ -96,6 +100,40 @@ class CommitSessionRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     messages: list[SessionMessage] = Field(default_factory=list)
     memory_entries: list[MemoryEntry] = Field(default_factory=list, alias="memoryEntries")
+
+
+class ImportContent(BaseModel):
+    kind: ImportContentKind = "inline_text"
+    text: str | None = None
+    path: str | None = None
+    url: str | None = None
+
+
+class DeriveOptions(BaseModel):
+    enabled: bool = False
+    mode: DeriveMode = "sync"
+    emit_layers: list[RecordLayer] = Field(default_factory=list, alias="emitLayers")
+    strategy: DeriveStrategy = "preserve_manual"
+    prompt_preset: PromptPreset = Field(default="archive_and_memory", alias="promptPreset")
+    provider: str = "litellm"
+    model: str | None = None
+
+
+class ImportResourceRequest(BaseModel):
+    tenant_id: str = Field(alias="tenantId")
+    partition_key: str = Field(alias="partitionKey")
+    type: str = "resource"
+    target_layer: RecordLayer = Field(alias="targetLayer")
+    title: str
+    content: ImportContent
+    source: dict[str, Any] | None = None
+    tags: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    manual_summary: str = Field(default="", alias="manualSummary")
+    importance: float = 0.0
+    pinned: bool = False
+    idempotency_key: str | None = Field(default=None, alias="idempotencyKey")
+    derive: DeriveOptions = Field(default_factory=DeriveOptions)
 
 
 class HealthResponse(BaseModel):

@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 
 from contexthub.config import load_config
 from contexthub.env import load_env_files
-from contexthub.providers import EmbeddingClient, RerankClient
+from contexthub.providers import EmbeddingClient, LiteLLMAbstractionClient, RerankClient
 from contexthub.schemas import (
     CommitSessionRequest,
     CreatePartitionRequest,
@@ -13,6 +13,7 @@ from contexthub.schemas import (
     CreateRecordRequest,
     CreateTenantRequest,
     HealthResponse,
+    ImportResourceRequest,
     QueryRequest,
     RegisterAgentRequest,
     UpsertPrincipalAclRequest,
@@ -27,15 +28,17 @@ def create_app() -> FastAPI:
     config = load_config()
     store = SQLiteStore(config.database_path)
     store.init()
+    abstraction_client = LiteLLMAbstractionClient(config.abstraction)
     service = HubService(
         store=store,
         embedder=EmbeddingClient(config.embedding),
         reranker=RerankClient(config.rerank),
+        abstractor=abstraction_client,
         config=config,
     )
     security = SecurityManager(store, config.auth)
 
-    app = FastAPI(title="ContextHub API", version="0.3.0")
+    app = FastAPI(title="ContextHub API", version="0.4.0")
 
     def get_auth(request: Request) -> AuthContext:
         return security.authenticate_request(request)
@@ -94,6 +97,11 @@ def create_app() -> FastAPI:
     def create_record(payload: CreateRecordRequest, auth: AuthContext = Depends(get_auth)) -> dict:
         security.ensure_partition_write(auth, payload.tenant_id, payload.partition_key)
         return service.create_record(payload)
+
+    @app.post("/v1/resources/import", status_code=201)
+    def import_resource(payload: ImportResourceRequest, auth: AuthContext = Depends(get_auth)) -> dict:
+        security.ensure_partition_write(auth, payload.tenant_id, payload.partition_key)
+        return service.import_resource(payload)
 
     @app.post("/v1/query")
     def query(payload: QueryRequest, auth: AuthContext = Depends(get_auth)) -> dict:

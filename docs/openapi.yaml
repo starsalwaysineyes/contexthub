@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ContextHub API
-  version: 0.3.0
+  version: 0.4.0
   description: Agent-native context backend API.
 servers:
   - url: http://127.0.0.1:4040
@@ -12,6 +12,26 @@ components:
       scheme: bearer
       bearerFormat: opaque
   schemas:
+    RecordLayer:
+      type: string
+      enum: [l0, l1, l2]
+
+    DeriveMode:
+      type: string
+      enum: [sync, async]
+
+    DeriveStrategy:
+      type: string
+      enum: [preserve_manual, create_sidecar, replace_derived_only]
+
+    PromptPreset:
+      type: string
+      enum: [archive_and_memory, memory_only, archive_only]
+
+    ImportContentKind:
+      type: string
+      enum: [inline_text, markdown_file, external_ref, blob_ref]
+
     Tenant:
       type: object
       additionalProperties: true
@@ -28,9 +48,7 @@ components:
         createdAt:
           type: string
           format: date-time
-    RecordLayer:
-      type: string
-      enum: [l0, l1, l2]
+
     CreateTenantRequest:
       type: object
       required: [slug, name]
@@ -41,6 +59,7 @@ components:
           type: string
         description:
           type: string
+
     CreatePartitionRequest:
       type: object
       required: [tenantId, key, name]
@@ -59,6 +78,7 @@ components:
           type: array
           items:
             type: string
+
     RegisterAgentRequest:
       type: object
       required: [tenantId, name]
@@ -72,6 +92,7 @@ components:
         metadata:
           type: object
           additionalProperties: true
+
     CreatePrincipalRequest:
       type: object
       required: [tenantId, name]
@@ -85,6 +106,7 @@ components:
         metadata:
           type: object
           additionalProperties: true
+
     UpsertPrincipalAclRequest:
       type: object
       required: [partitionKey]
@@ -99,6 +121,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/RecordLayer"
+
     CreateRecordRequest:
       type: object
       required: [tenantId, partitionKey, type, title, text]
@@ -137,6 +160,79 @@ components:
           type: boolean
         idempotencyKey:
           type: string
+
+    ImportContent:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          $ref: "#/components/schemas/ImportContentKind"
+        text:
+          type: string
+        path:
+          type: string
+        url:
+          type: string
+
+    DeriveOptions:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        mode:
+          $ref: "#/components/schemas/DeriveMode"
+        emitLayers:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecordLayer"
+        strategy:
+          $ref: "#/components/schemas/DeriveStrategy"
+        promptPreset:
+          $ref: "#/components/schemas/PromptPreset"
+        provider:
+          type: string
+        model:
+          type: string
+
+    ImportResourceRequest:
+      type: object
+      required: [tenantId, partitionKey, targetLayer, title, content]
+      properties:
+        tenantId:
+          type: string
+        partitionKey:
+          type: string
+        type:
+          type: string
+        targetLayer:
+          $ref: "#/components/schemas/RecordLayer"
+        title:
+          type: string
+        content:
+          $ref: "#/components/schemas/ImportContent"
+        source:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: "null"
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        manualSummary:
+          type: string
+        importance:
+          type: number
+        pinned:
+          type: boolean
+        idempotencyKey:
+          type: string
+        derive:
+          $ref: "#/components/schemas/DeriveOptions"
+
     QueryRequest:
       type: object
       required: [tenantId, query]
@@ -161,6 +257,7 @@ components:
           type: integer
         rerank:
           type: boolean
+
     QueryResponse:
       type: object
       properties:
@@ -172,6 +269,7 @@ components:
         retrieval:
           type: object
           additionalProperties: true
+
     CommitSessionRequest:
       type: object
       required: [tenantId, partitionKey]
@@ -199,6 +297,7 @@ components:
           items:
             type: object
             additionalProperties: true
+
 paths:
   /health:
     get:
@@ -206,6 +305,7 @@ paths:
       responses:
         "200":
           description: OK
+
   /v1/auth/me:
     get:
       security:
@@ -214,6 +314,7 @@ paths:
       responses:
         "200":
           description: OK
+
   /v1/tenants:
     post:
       security:
@@ -232,6 +333,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Tenant"
+
   /v1/partitions:
     post:
       security:
@@ -246,6 +348,7 @@ paths:
       responses:
         "201":
           description: Created
+
   /v1/agents:
     post:
       security:
@@ -260,6 +363,7 @@ paths:
       responses:
         "201":
           description: Created
+
   /v1/principals:
     post:
       security:
@@ -274,6 +378,7 @@ paths:
       responses:
         "201":
           description: Created
+
   /v1/principals/{principalId}/acl:
     post:
       security:
@@ -294,6 +399,7 @@ paths:
       responses:
         "201":
           description: Created
+
   /v1/records:
     post:
       security:
@@ -308,6 +414,22 @@ paths:
       responses:
         "201":
           description: Created
+
+  /v1/resources/import:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Import resource and optionally derive layers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportResourceRequest"
+      responses:
+        "201":
+          description: Created
+
   /v1/query:
     post:
       security:
@@ -326,6 +448,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/QueryResponse"
+
   /v1/sessions/commit:
     post:
       security:

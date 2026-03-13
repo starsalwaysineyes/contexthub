@@ -99,7 +99,7 @@ When auth is enabled and the caller is a principal:
 
 ## Write behavior
 
-`POST /v1/records` and `POST /v1/sessions/commit` require `canWrite=true` on the target partition.
+`POST /v1/records`, `POST /v1/resources/import`, and `POST /v1/sessions/commit` require `canWrite=true` on the target partition.
 
 ## Recommended bootstrap flow
 

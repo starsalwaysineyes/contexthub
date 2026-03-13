@@ -15,7 +15,8 @@ Current status:
 - `L0/L1/L2` explicit model: done
 - first-pass auth + partition ACL: done
 - upload + derivation design: done
-- import jobs: next
+- `/v1/resources/import` MVP (`inline_text`) + optional sync LiteLLM derivation: done
+- local markdown/archive bulk import jobs: next
 
 ### Phase 2 - adapter readiness
 

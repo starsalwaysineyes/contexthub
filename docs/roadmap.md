@@ -13,6 +13,7 @@
 - explicit `L0/L1/L2` model
 - first-pass bearer auth + partition ACL
 - upload/derivation design with LiteLLM as abstraction gateway
+- `POST /v1/resources/import` MVP (`inline_text`) with optional sync derivation
 - next: bulk import for Markdown archives and daily memory files
 - next: stronger duplicate control and write throttling hooks
 

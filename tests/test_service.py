@@ -5,12 +5,13 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from contexthub.app import create_app
-from contexthub.config import AppConfig, AuthConfig, ProviderConfig, RetrievalConfig
+from contexthub.config import AbstractionConfig, AppConfig, AuthConfig, ProviderConfig, RetrievalConfig
 from contexthub.schemas import (
     CommitSessionRequest,
     CreatePartitionRequest,
     CreateRecordRequest,
     CreateTenantRequest,
+    ImportResourceRequest,
     QueryRequest,
     RegisterAgentRequest,
 )
@@ -42,6 +43,37 @@ class FakeReranker:
         ]
 
 
+class FakeAbstractor:
+    def status(self):
+        return {
+            "enabled": True,
+            "ready": True,
+            "provider": "litellm",
+            "model": "fake-abstraction",
+            "baseUrl": "https://example.com",
+        }
+
+    def derive(self, *, title, text, source_layer, emit_layers, prompt_preset, model=None):
+        payload = {}
+        if "l1" in emit_layers:
+            payload["l1"] = {
+                "title": f"{title} summary",
+                "text": f"Detailed archive for: {text}",
+                "manualSummary": "Detailed derived summary",
+                "importance": 4,
+                "tags": ["derived", "l1"],
+            }
+        if "l0" in emit_layers:
+            payload["l0"] = {
+                "title": f"{title} pointer",
+                "text": "Short recall pointer",
+                "manualSummary": "Short derived memory",
+                "importance": 3,
+                "tags": ["derived", "l0"],
+            }
+        return payload
+
+
 def build_service(tmp_path: Path) -> HubService:
     database_path = tmp_path / "contexthub.db"
     store = SQLiteStore(database_path)
@@ -54,8 +86,21 @@ def build_service(tmp_path: Path) -> HubService:
         embedding=ProviderConfig(enabled=True, base_url="https://example.com", api_key="demo", model="fake"),
         rerank=ProviderConfig(enabled=True, base_url="https://example.com", api_key="demo", model="fake"),
         auth=AuthConfig(enabled=False, admin_token=""),
+        abstraction=AbstractionConfig(
+            provider="litellm",
+            base_url="https://example.com",
+            api_key="demo",
+            model="fake-abstraction",
+            timeout_seconds=30.0,
+        ),
     )
-    return HubService(store=store, embedder=FakeEmbedder(), reranker=FakeReranker(), config=config)
+    return HubService(
+        store=store,
+        embedder=FakeEmbedder(),
+        reranker=FakeReranker(),
+        abstractor=FakeAbstractor(),
+        config=config,
+    )
 
 
 def test_query_returns_relevant_record(tmp_path: Path) -> None:
@@ -170,6 +215,36 @@ def test_query_can_filter_by_layer(tmp_path: Path) -> None:
     assert result["items"][0]["title"] == "Raw transcript"
 
 
+def test_import_resource_can_derive_l1_and_l0(tmp_path: Path) -> None:
+    service = build_service(tmp_path)
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo", name="Demo"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="project-openclaw", name="Project OpenClaw"))
+
+    result = service.import_resource(
+        ImportResourceRequest(
+            tenantId=tenant["id"],
+            partitionKey="project-openclaw",
+            type="resource",
+            targetLayer="l2",
+            title="Meeting transcript",
+            content={"kind": "inline_text", "text": "We decided to keep manual curation first."},
+            derive={
+                "enabled": True,
+                "mode": "sync",
+                "emitLayers": ["l1", "l0"],
+                "provider": "litellm",
+                "promptPreset": "archive_and_memory",
+            },
+        )
+    )
+
+    assert result["record"]["layer"] == "l2"
+    assert result["derivation"]["status"] == "completed"
+    assert len(result["derivation"]["records"]) == 2
+    layers = {record["layer"] for record in result["derivation"]["records"]}
+    assert layers == {"l1", "l0"}
+
+
 def test_health_route(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("CONTEXT_HUB_DATABASE_PATH", str(tmp_path / "api.db"))
     monkeypatch.setenv("CONTEXT_HUB_ENABLE_EMBEDDINGS", "false")
@@ -265,13 +340,27 @@ def test_auth_and_partition_acl_flow(tmp_path: Path, monkeypatch) -> None:
     )
     assert denied_write.status_code == 403
 
+    import_response = client.post(
+        "/v1/resources/import",
+        headers=principal_headers,
+        json={
+            "tenantId": tenant["id"],
+            "partitionKey": "memory",
+            "targetLayer": "l2",
+            "title": "Raw note",
+            "content": {"kind": "inline_text", "text": "raw body"},
+            "derive": {"enabled": False},
+        },
+    )
+    assert import_response.status_code == 201
+
     query_response = client.post(
         "/v1/query",
         headers=principal_headers,
         json={"tenantId": tenant["id"], "query": "single-instance", "partitions": ["memory"]},
     )
     assert query_response.status_code == 200
-    assert len(query_response.json()["items"]) == 1
+    assert len(query_response.json()["items"]) >= 1
 
     denied_query = client.post(
         "/v1/query",

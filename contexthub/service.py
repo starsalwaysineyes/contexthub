@@ -7,13 +7,14 @@ from datetime import datetime, timezone
 from typing import Any
 
 from contexthub.config import AppConfig
-from contexthub.providers import EmbeddingClient, RerankClient
+from contexthub.providers import EmbeddingClient, LiteLLMAbstractionClient, RerankClient
 from contexthub.schemas import (
     CommitSessionRequest,
     CreatePartitionRequest,
     CreatePrincipalRequest,
     CreateRecordRequest,
     CreateTenantRequest,
+    ImportResourceRequest,
     QueryRequest,
     RegisterAgentRequest,
     UpsertPrincipalAclRequest,
@@ -62,11 +63,13 @@ class HubService:
         store: SQLiteStore,
         embedder: EmbeddingClient,
         reranker: RerankClient,
+        abstractor: LiteLLMAbstractionClient | None,
         config: AppConfig,
     ) -> None:
         self.store = store
         self.embedder = embedder
         self.reranker = reranker
+        self.abstractor = abstractor
         self.config = config
 
     def health(self) -> dict[str, Any]:
@@ -76,6 +79,13 @@ class HubService:
             "providers": {
                 "embedding": self.embedder.status(),
                 "rerank": self.reranker.status(),
+                "abstraction": self.abstractor.status() if self.abstractor is not None else {
+                    "enabled": False,
+                    "ready": False,
+                    "provider": None,
+                    "model": None,
+                    "baseUrl": None,
+                },
             },
         }
 
@@ -294,6 +304,53 @@ class HubService:
                 (principal_id,),
             ).fetchall()
         return [self._serialize_acl(dict(row)) for row in rows]
+
+    def import_resource(self, payload: ImportResourceRequest) -> dict[str, Any]:
+        if payload.content.kind != "inline_text":
+            raise HubError("Only content.kind=inline_text is implemented in the current MVP")
+        if not payload.content.text or not payload.content.text.strip():
+            raise HubError("content.text is required for content.kind=inline_text")
+
+        source_record = self.create_record(
+            CreateRecordRequest(
+                tenantId=payload.tenant_id,
+                partitionKey=payload.partition_key,
+                type=payload.type,
+                layer=payload.target_layer,
+                title=payload.title,
+                text=payload.content.text,
+                source=payload.source,
+                tags=payload.tags,
+                metadata={**payload.metadata, "importKind": payload.content.kind},
+                manualSummary=payload.manual_summary,
+                importance=payload.importance,
+                pinned=payload.pinned,
+                idempotencyKey=payload.idempotency_key,
+            )
+        )
+
+        derivation = {
+            "status": "disabled",
+            "mode": payload.derive.mode,
+            "effectiveMode": payload.derive.mode,
+            "plannedLayers": payload.derive.emit_layers,
+            "records": [],
+        }
+
+        if payload.derive.enabled:
+            derived_records = self._derive_records(payload, source_record)
+            derivation = {
+                "status": "completed",
+                "mode": payload.derive.mode,
+                "effectiveMode": "sync",
+                "plannedLayers": payload.derive.emit_layers,
+                "records": derived_records,
+            }
+
+        return {
+            "record": source_record,
+            "derivation": derivation,
+        }
 
     def create_record(self, payload: CreateRecordRequest) -> dict[str, Any]:
         partition_key = normalize_key(payload.partition_key)
@@ -602,6 +659,70 @@ class HubService:
                 "usedRerank": any(item["trace"]["rerank"] is not None for item in items),
             },
         }
+
+    def _derive_records(self, payload: ImportResourceRequest, source_record: dict[str, Any]) -> list[dict[str, Any]]:
+        if payload.derive.provider.lower() != "litellm":
+            raise HubError("Only derive.provider=litellm is implemented in the current MVP")
+        if self.abstractor is None:
+            raise HubError("Abstraction client is not configured")
+
+        requested_layers = [normalize_key(layer) for layer in payload.derive.emit_layers]
+        requested_layers = [layer for layer in requested_layers if layer != source_record["layer"]]
+        if not requested_layers:
+            return []
+
+        derived_payload = self.abstractor.derive(
+            title=source_record["title"],
+            text=source_record["text"],
+            source_layer=source_record["layer"],
+            emit_layers=requested_layers,
+            prompt_preset=payload.derive.prompt_preset,
+            model=payload.derive.model,
+        )
+
+        created_records = []
+        for layer in requested_layers:
+            layer_payload = derived_payload.get(layer)
+            if not isinstance(layer_payload, dict):
+                continue
+
+            derived_text = str(layer_payload.get("text", "")).strip()
+            if not derived_text:
+                continue
+
+            default_type = "summary" if layer == "l1" else "memory"
+            metadata = {
+                **payload.metadata,
+                "derivedFromRecordId": source_record["id"],
+                "derivationProvider": payload.derive.provider,
+                "derivationModel": payload.derive.model or self.config.abstraction.model,
+                "derivationPromptPreset": payload.derive.prompt_preset,
+                "managedByDerivation": True,
+            }
+            record = self.create_record(
+                CreateRecordRequest(
+                    tenantId=payload.tenant_id,
+                    partitionKey=payload.partition_key,
+                    type=layer_payload.get("type", default_type),
+                    layer=layer,
+                    title=layer_payload.get("title", f"{source_record['title']} ({layer.upper()})"),
+                    text=derived_text,
+                    source={
+                        "kind": "derived",
+                        "originRecordId": source_record["id"],
+                        "source": payload.source,
+                    },
+                    tags=layer_payload.get("tags", payload.tags),
+                    metadata=metadata,
+                    manualSummary=layer_payload.get("manualSummary", ""),
+                    importance=float(layer_payload.get("importance", 3.0)),
+                    pinned=bool(layer_payload.get("pinned", False)),
+                    idempotencyKey=f"derive:{source_record['id']}:{layer}:{payload.derive.prompt_preset}",
+                )
+            )
+            created_records.append(record)
+
+        return created_records
 
     def _assert_tenant(self, conn: Any, tenant_id: str) -> None:
         row = conn.execute("SELECT id FROM tenants WHERE id = ?", (tenant_id,)).fetchone()

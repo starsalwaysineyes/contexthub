@@ -31,6 +31,15 @@ class AuthConfig:
 
 
 @dataclass(slots=True)
+class AbstractionConfig:
+    provider: str
+    base_url: str
+    api_key: str
+    model: str
+    timeout_seconds: float
+
+
+@dataclass(slots=True)
 class AppConfig:
     port: int
     data_dir: Path
@@ -39,6 +48,7 @@ class AppConfig:
     embedding: ProviderConfig
     rerank: ProviderConfig
     auth: AuthConfig
+    abstraction: AbstractionConfig
 
 
 def _get_bool(name: str, default: bool) -> bool:
@@ -93,5 +103,12 @@ def load_config() -> AppConfig:
         auth=AuthConfig(
             enabled=_get_bool("CONTEXT_HUB_ENABLE_AUTH", False),
             admin_token=os.environ.get("CONTEXT_HUB_ADMIN_TOKEN", ""),
+        ),
+        abstraction=AbstractionConfig(
+            provider=os.environ.get("CONTEXT_HUB_ABSTRACTION_PROVIDER", "litellm"),
+            base_url=os.environ.get("CONTEXT_HUB_ABSTRACTION_BASE_URL", "").rstrip("/"),
+            api_key=os.environ.get("CONTEXT_HUB_ABSTRACTION_API_KEY", ""),
+            model=os.environ.get("CONTEXT_HUB_ABSTRACTION_MODEL", "gpt-5.4"),
+            timeout_seconds=_get_float("CONTEXT_HUB_ABSTRACTION_TIMEOUT_SECONDS", 60.0),
         ),
     )
