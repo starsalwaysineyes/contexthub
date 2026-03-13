@@ -103,10 +103,30 @@ Recommended initial provider values:
 
 The repo does not commit real keys.
 
+Before pushing, run:
+
+```bash
+npm run check:secrets
+```
+
+## TODO
+
+- [x] Bootstrap a minimal multi-tenant HTTP MVP
+- [x] Ship initial docs and OpenAPI description
+- [x] Add a tiny JS client for agent-side integration
+- [x] Add local and CI secret scanning
+- [ ] Add OpenClaw adapter examples and one-command helper scripts
+- [ ] Add Codex and Claude Code adapter examples
+- [ ] Add first-pass auth and partition ACL enforcement
+- [ ] Replace JSON metadata store with SQLite after schema stabilizes
+- [ ] Add Markdown/archive import jobs
+- [ ] Deploy the first managed instance on the target server
+
 ## Repo layout
 
 ```text
 src/
+  client/
   config.js
   server.js
   router.js
@@ -115,14 +135,21 @@ src/
   services/
   storage/
   utils/
+scripts/
+  check-secrets.js
 docs/
   architecture.md
   api.md
   openapi.yaml
   agent-integration.md
   roadmap.md
+  stack-decision.md
 test/
 ```
+
+## Stack note
+
+The current decision is: keep the service layer in Node.js for now, but keep the protocol clean enough that Python workers can be added later if ingestion or ML-heavy indexing becomes the real center of gravity. See `docs/stack-decision.md`.
 
 ## Near-term roadmap
 

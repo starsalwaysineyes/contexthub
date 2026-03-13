@@ -131,11 +131,22 @@ Agents should be able to share a backend without automatically sharing everythin
 - testing vs production separation
 - selective cross-zone recall
 
+## What we borrow from OpenViking
+
+OpenViking is worth learning from because it treats context as a system, not just as top-k retrieval.
+
+The parts worth borrowing are:
+
+- multi-tenant thinking instead of one flat knowledge bucket
+- session-oriented commits instead of only raw document ingestion
+- progressive retrieval rather than one-shot vector lookup
+- the idea that `memory`, `resource`, and `skill` can live under one broader context layer
+
+Those ideas map well to the current direction here.
+
 ## Why not copy OpenViking literally
 
-OpenViking is a useful reference because it treats context as a system, not just as top-k retrieval.
-
-But this project deliberately avoids a blind copy because the current preference is:
+This project still avoids a blind copy because the current preference is:
 
 - keep manual archive freedom
 - keep operator-visible semantics
