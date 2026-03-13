@@ -41,6 +41,17 @@ In another terminal:
 uv run python examples/quickstart.py
 ```
 
+For local Markdown import jobs:
+
+```bash
+uv run python -m contexthub import-markdown \
+  --tenant-id tenant_xxx \
+  --partition-key project-openclaw \
+  --layer l1 \
+  --root /path/to/markdown/tree \
+  --dry-run
+```
+
 Default endpoints:
 
 - `GET /health`
@@ -97,6 +108,7 @@ GitHub Actions runs the same secret scan and pytest on every push/PR.
 - [x] Finish upload + derivation design with LiteLLM as the abstraction gateway
 - [x] Add first-pass auth and partition ACL enforcement
 - [x] Implement `POST /v1/resources/import` MVP (`inline_text` + optional sync derivation)
+- [x] Add local Markdown import CLI (`contexthub import-markdown`)
 - [ ] Add OpenClaw adapter examples + one-command helper scripts
 - [ ] Add Codex and Claude Code adapter examples
 - [ ] Add Markdown/archive ingestion jobs
@@ -126,6 +138,7 @@ docs/
   auth-acl.md
   layer-model.md
   upload-derivation-design.md
+  import-jobs.md
   execution-plan.md
   agent-integration.md
   roadmap.md
