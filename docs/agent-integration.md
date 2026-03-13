@@ -78,6 +78,6 @@ curl http://127.0.0.1:4040/v1/query \
 
 ## Future adapter package plan
 
-- `@contexthub/client` for plain Node
+- `contexthub.client.ContextHubClient` (already in this repo)
+- optional `@contexthub/client` for plain Node consumers
 - `@contexthub/openclaw-adapter`
-- a tiny Python client for broader agent ecosystems

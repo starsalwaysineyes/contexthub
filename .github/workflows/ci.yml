@@ -12,17 +12,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          node-version: 22
-          cache: npm
+          python-version: "3.12"
 
-      - name: Install
-        run: npm install
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dependencies
+        run: uv sync --group dev --frozen
 
       - name: Secret scan
-        run: npm run check:secrets
+        run: uv run python scripts/check_secrets.py
 
-      - name: Test
-        run: npm test
+      - name: Run tests
+        run: uv run pytest

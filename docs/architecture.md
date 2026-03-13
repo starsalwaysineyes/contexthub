@@ -157,18 +157,18 @@ So the design is inspired by that direction, but opinionated toward explicit hum
 
 ## MVP storage choice
 
-Current choice: local JSON state on disk.
+Current choice: SQLite metadata on local disk.
 
-Why it is acceptable for MVP:
+Why this is the right step now:
 
-- tiny operational surface
-- easy inspection
-- fast iteration on schemas
-- easy migration later to SQLite or Postgres
+- still simple to inspect and back up
+- stronger consistency than ad-hoc JSON file mutation
+- better baseline for concurrent writes and future ACL rules
+- smooth migration path to Postgres later if needed
 
 Planned next step after schema stabilizes:
 
-- move metadata to SQLite
+- add explicit schema migration tooling
 - keep large raw content on disk or object storage
 - optionally add background indexing workers
 
