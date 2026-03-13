@@ -7,12 +7,22 @@
 - partition is addressed by `partitionKey`
 - record layer is explicit via `layer`
 - item citations come back as `recordId` + `chunkId`
+- when auth is enabled, `/v1/*` requires `Authorization: Bearer <token>` except `/health`
 
 ## `GET /health`
 
 Returns storage counts and provider readiness.
 
+## `GET /v1/auth/me`
+
+Returns the current auth identity.
+
+- admin token -> returns admin identity
+- principal token -> returns principal identity plus ACL summary
+
 ## `POST /v1/tenants`
+
+Admin-only.
 
 Create or return a tenant by slug.
 
@@ -27,6 +37,8 @@ Request:
 ```
 
 ## `POST /v1/partitions`
+
+Admin-only.
 
 Create or return a partition inside a tenant.
 
@@ -44,6 +56,8 @@ Request:
 
 ## `POST /v1/agents`
 
+Admin-only.
+
 Register an agent caller.
 
 Request:
@@ -56,6 +70,42 @@ Request:
   "metadata": {
     "channel": "discord"
   }
+}
+```
+
+## `POST /v1/principals`
+
+Admin-only.
+
+Create a caller principal and return its bearer token once.
+
+Request:
+
+```json
+{
+  "tenantId": "tenant_xxx",
+  "name": "openclaw-main",
+  "kind": "service",
+  "metadata": {
+    "channel": "discord"
+  }
+}
+```
+
+## `POST /v1/principals/{principalId}/acl`
+
+Admin-only.
+
+Create or update partition-level ACL for a principal.
+
+Request:
+
+```json
+{
+  "partitionKey": "memory",
+  "canRead": true,
+  "canWrite": true,
+  "allowedLayers": ["l0", "l1"]
 }
 ```
 
@@ -87,6 +137,7 @@ Notes:
 - the body is chunked automatically
 - embeddings are attached if the provider is configured
 - `idempotencyKey` is the simplest way to avoid duplicate writes from multiple agents
+- when auth is enabled, caller must have `canWrite=true` on the target partition
 
 ## `POST /v1/query`
 
@@ -141,6 +192,12 @@ Response shape:
   }
 }
 ```
+
+Auth notes:
+
+- admin token can query everything
+- principal token can query only readable partitions
+- result rows are filtered by `allowedLayers` per partition
 
 ## `POST /v1/sessions/commit`
 

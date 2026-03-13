@@ -29,6 +29,20 @@ class RegisterAgentRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class CreatePrincipalRequest(BaseModel):
+    tenant_id: str = Field(alias="tenantId")
+    name: str
+    kind: str = "service"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class UpsertPrincipalAclRequest(BaseModel):
+    partition_key: str = Field(alias="partitionKey")
+    can_read: bool = Field(default=True, alias="canRead")
+    can_write: bool = Field(default=False, alias="canWrite")
+    allowed_layers: list[RecordLayer] = Field(default_factory=lambda: ["l0", "l1", "l2"], alias="allowedLayers")
+
+
 class CreateRecordRequest(BaseModel):
     tenant_id: str = Field(alias="tenantId")
     partition_key: str = Field(alias="partitionKey")

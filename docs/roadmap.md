@@ -8,12 +8,13 @@
 - keep Node MVP snapshot in `legacy/node-mvp/`
 - add uv-based CI and secrets scan
 
-## Phase 1 - make the backend practical
+## Phase 1 - backend core (mostly done)
 
-- add stable schema migration scripts
-- add bulk import for Markdown archives and daily memory files
-- add partition policy checks per agent
-- add stronger duplicate control and write throttling hooks
+- explicit `L0/L1/L2` model
+- first-pass bearer auth + partition ACL
+- upload/derivation design with LiteLLM as abstraction gateway
+- next: bulk import for Markdown archives and daily memory files
+- next: stronger duplicate control and write throttling hooks
 
 ## Phase 2 - make it agent-friendly
 
@@ -24,7 +25,7 @@
 
 ## Phase 3 - make it production-worthy
 
-- add authn/authz, API keys, and per-agent ACL policies
+- add richer authn/authz, token rotation, and audit logs
 - add background indexing workers
 - add attachment storage and references
 - optionally split heavy ingestion/retrieval workers into dedicated processes

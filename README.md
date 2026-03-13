@@ -17,8 +17,9 @@ This repo now uses a Python + uv stack for better runtime stability and dependen
 
 - FastAPI service in `contexthub/`
 - SQLite storage schema in `contexthub/store.py`
-- Core objects: tenants, partitions, agents, records, sessions
+- Core objects: tenants, partitions, agents, principals, ACL rules, records, sessions
 - Explicit `L0/L1/L2` layer model on records and query filters
+- First-pass bearer auth + partition ACL
 - Retrieval pipeline with lexical score + optional embeddings + optional rerank
 - Python client SDK in `contexthub/client.py`
 - Architecture/API docs in `docs/`
@@ -41,9 +42,12 @@ uv run python examples/quickstart.py
 Default endpoints:
 
 - `GET /health`
+- `GET /v1/auth/me`
 - `POST /v1/tenants`
 - `POST /v1/partitions`
 - `POST /v1/agents`
+- `POST /v1/principals`
+- `POST /v1/principals/{principalId}/acl`
 - `POST /v1/records`
 - `POST /v1/query`
 - `POST /v1/sessions/commit`
@@ -65,6 +69,11 @@ Recommended provider values:
 - rerank base URL: `https://cloud.infini-ai.com/maas/v1`
 - rerank model: `bge-reranker-v2-m3`
 
+Auth-related values:
+
+- `CONTEXT_HUB_ENABLE_AUTH=true` to enable bearer auth
+- `CONTEXT_HUB_ADMIN_TOKEN=...` to bootstrap tenant/principal/ACL management
+
 ## Security checks
 
 Before pushing:
@@ -83,9 +92,9 @@ GitHub Actions runs the same secret scan and pytest on every push/PR.
 - [x] Add Python-based secrets scan in CI/local
 - [x] Make `L0/L1/L2` explicit in the backend data model
 - [x] Finish upload + derivation design with LiteLLM as the abstraction gateway
+- [x] Add first-pass auth and partition ACL enforcement
 - [ ] Add OpenClaw adapter examples + one-command helper scripts
 - [ ] Add Codex and Claude Code adapter examples
-- [ ] Add first-pass auth and partition ACL enforcement
 - [ ] Add Markdown/archive ingestion jobs
 - [ ] Deploy first managed instance to target server
 
@@ -96,6 +105,7 @@ contexthub/
   __main__.py
   app.py
   service.py
+  security.py
   store.py
   schemas.py
   providers.py
@@ -109,6 +119,7 @@ docs/
   architecture.md
   api.md
   openapi.yaml
+  auth-acl.md
   layer-model.md
   upload-derivation-design.md
   execution-plan.md
@@ -125,4 +136,5 @@ legacy/
 - The current implementation keeps API shape close to the original MVP to reduce adapter churn.
 - Layer mapping is documented in `docs/layer-model.md`.
 - Upload and auto-derivation design is documented in `docs/upload-derivation-design.md`.
+- Auth and partition ACL are documented in `docs/auth-acl.md`.
 - Next-step rollout order is documented in `docs/execution-plan.md`.

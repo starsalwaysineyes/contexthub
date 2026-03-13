@@ -40,6 +40,34 @@ CREATE TABLE IF NOT EXISTS agents (
   FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS principals (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  disabled INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  last_used_at TEXT,
+  FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS principal_partition_acl (
+  id TEXT PRIMARY KEY,
+  principal_id TEXT NOT NULL,
+  tenant_id TEXT NOT NULL,
+  partition_key TEXT NOT NULL,
+  can_read INTEGER NOT NULL DEFAULT 1,
+  can_write INTEGER NOT NULL DEFAULT 0,
+  allowed_layers TEXT NOT NULL DEFAULT '["l0","l1","l2"]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (principal_id, partition_key),
+  FOREIGN KEY (principal_id) REFERENCES principals (id) ON DELETE CASCADE,
+  FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS records (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,
@@ -88,6 +116,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_partitions_tenant_key ON partitions (tenant_id, key);
+CREATE INDEX IF NOT EXISTS idx_principals_tenant_id ON principals (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_acl_principal_partition ON principal_partition_acl (principal_id, partition_key);
 CREATE INDEX IF NOT EXISTS idx_records_tenant_partition ON records (tenant_id, partition_key);
 CREATE INDEX IF NOT EXISTS idx_chunks_tenant_partition ON chunks (tenant_id, partition_key);
 CREATE INDEX IF NOT EXISTS idx_sessions_tenant_partition ON sessions (tenant_id, partition_key);
@@ -131,7 +161,16 @@ class SQLiteStore:
             conn.close()
 
     def counts(self) -> dict[str, int]:
-        tables = ["tenants", "partitions", "agents", "records", "chunks", "sessions"]
+        tables = [
+            "tenants",
+            "partitions",
+            "agents",
+            "principals",
+            "principal_partition_acl",
+            "records",
+            "chunks",
+            "sessions",
+        ]
         with self.connection() as conn:
             return {
                 table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])

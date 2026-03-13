@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from contexthub.app import create_app
-from contexthub.config import AppConfig, ProviderConfig, RetrievalConfig
+from contexthub.config import AppConfig, AuthConfig, ProviderConfig, RetrievalConfig
 from contexthub.schemas import (
     CommitSessionRequest,
     CreatePartitionRequest,
@@ -53,6 +53,7 @@ def build_service(tmp_path: Path) -> HubService:
         retrieval=RetrievalConfig(),
         embedding=ProviderConfig(enabled=True, base_url="https://example.com", api_key="demo", model="fake"),
         rerank=ProviderConfig(enabled=True, base_url="https://example.com", api_key="demo", model="fake"),
+        auth=AuthConfig(enabled=False, admin_token=""),
     )
     return HubService(store=store, embedder=FakeEmbedder(), reranker=FakeReranker(), config=config)
 
@@ -173,6 +174,7 @@ def test_health_route(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("CONTEXT_HUB_DATABASE_PATH", str(tmp_path / "api.db"))
     monkeypatch.setenv("CONTEXT_HUB_ENABLE_EMBEDDINGS", "false")
     monkeypatch.setenv("CONTEXT_HUB_ENABLE_RERANK", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_AUTH", "false")
     app = create_app()
     client = TestClient(app)
 
@@ -182,3 +184,98 @@ def test_health_route(tmp_path: Path, monkeypatch) -> None:
     body = response.json()
     assert body["ok"] is True
     assert body["counts"]["tenants"] == 0
+
+
+def test_auth_and_partition_acl_flow(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CONTEXT_HUB_DATABASE_PATH", str(tmp_path / "auth.db"))
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_EMBEDDINGS", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_RERANK", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_AUTH", "true")
+    monkeypatch.setenv("CONTEXT_HUB_ADMIN_TOKEN", "admin-secret")
+    app = create_app()
+    client = TestClient(app)
+
+    assert client.post("/v1/tenants", json={"slug": "demo", "name": "Demo"}).status_code == 401
+
+    admin_headers = {"Authorization": "Bearer admin-secret"}
+    tenant = client.post(
+        "/v1/tenants",
+        headers=admin_headers,
+        json={"slug": "demo", "name": "Demo"},
+    ).json()
+
+    client.post(
+        "/v1/partitions",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "key": "memory", "name": "Memory"},
+    ).raise_for_status()
+    client.post(
+        "/v1/partitions",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "key": "private", "name": "Private"},
+    ).raise_for_status()
+
+    principal = client.post(
+        "/v1/principals",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "name": "OpenClaw Main", "kind": "service"},
+    ).json()
+    principal_headers = {"Authorization": f"Bearer {principal['token']}"}
+
+    client.post(
+        f"/v1/principals/{principal['id']}/acl",
+        headers=admin_headers,
+        json={
+            "partitionKey": "memory",
+            "canRead": True,
+            "canWrite": True,
+            "allowedLayers": ["l0", "l1"],
+        },
+    ).raise_for_status()
+
+    me = client.get("/v1/auth/me", headers=principal_headers)
+    assert me.status_code == 200
+    assert me.json()["principal"]["name"] == "OpenClaw Main"
+
+    write_response = client.post(
+        "/v1/records",
+        headers=principal_headers,
+        json={
+            "tenantId": tenant["id"],
+            "partitionKey": "memory",
+            "type": "memory",
+            "layer": "l0",
+            "title": "Decision",
+            "text": "Prefer single-instance multi-tenant.",
+        },
+    )
+    assert write_response.status_code == 201
+
+    denied_write = client.post(
+        "/v1/records",
+        headers=principal_headers,
+        json={
+            "tenantId": tenant["id"],
+            "partitionKey": "private",
+            "type": "memory",
+            "layer": "l0",
+            "title": "Secret",
+            "text": "Should not write here.",
+        },
+    )
+    assert denied_write.status_code == 403
+
+    query_response = client.post(
+        "/v1/query",
+        headers=principal_headers,
+        json={"tenantId": tenant["id"], "query": "single-instance", "partitions": ["memory"]},
+    )
+    assert query_response.status_code == 200
+    assert len(query_response.json()["items"]) == 1
+
+    denied_query = client.post(
+        "/v1/query",
+        headers=principal_headers,
+        json={"tenantId": tenant["id"], "query": "secret", "partitions": ["private"]},
+    )
+    assert denied_query.status_code == 403

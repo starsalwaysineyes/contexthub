@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import secrets
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -9,10 +11,12 @@ from contexthub.providers import EmbeddingClient, RerankClient
 from contexthub.schemas import (
     CommitSessionRequest,
     CreatePartitionRequest,
+    CreatePrincipalRequest,
     CreateRecordRequest,
     CreateTenantRequest,
     QueryRequest,
     RegisterAgentRequest,
+    UpsertPrincipalAclRequest,
 )
 from contexthub.store import SQLiteStore, from_json, to_json
 from contexthub.text import (
@@ -31,6 +35,10 @@ class HubError(RuntimeError):
 
 def create_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def now_iso() -> str:
@@ -159,6 +167,133 @@ class HubService:
                 ),
             )
             return self._serialize_agent(agent)
+
+    def create_principal(self, payload: CreatePrincipalRequest) -> dict[str, Any]:
+        token = f"ctx_{secrets.token_urlsafe(32)}"
+        token_hash = hash_token(token)
+        timestamp = now_iso()
+
+        with self.store.connection() as conn:
+            self._assert_tenant(conn, payload.tenant_id)
+            principal = {
+                "id": create_id("principal"),
+                "tenant_id": payload.tenant_id,
+                "name": payload.name.strip(),
+                "kind": normalize_key(payload.kind),
+                "token_hash": token_hash,
+                "metadata": to_json(payload.metadata),
+                "disabled": 0,
+                "created_at": timestamp,
+                "last_used_at": None,
+            }
+            conn.execute(
+                """
+                INSERT INTO principals (id, tenant_id, name, kind, token_hash, metadata, disabled, created_at, last_used_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    principal["id"],
+                    principal["tenant_id"],
+                    principal["name"],
+                    principal["kind"],
+                    principal["token_hash"],
+                    principal["metadata"],
+                    principal["disabled"],
+                    principal["created_at"],
+                    principal["last_used_at"],
+                ),
+            )
+
+        serialized = self._serialize_principal(principal)
+        serialized["token"] = token
+        return serialized
+
+    def upsert_principal_acl(self, principal_id: str, payload: UpsertPrincipalAclRequest) -> dict[str, Any]:
+        partition_key = normalize_key(payload.partition_key)
+        timestamp = now_iso()
+
+        with self.store.connection() as conn:
+            principal_row = conn.execute(
+                "SELECT * FROM principals WHERE id = ?",
+                (principal_id,),
+            ).fetchone()
+            if principal_row is None:
+                raise HubError(f"Unknown principal: {principal_id}")
+
+            principal = dict(principal_row)
+            self._assert_partition(conn, principal["tenant_id"], partition_key)
+            existing = conn.execute(
+                "SELECT * FROM principal_partition_acl WHERE principal_id = ? AND partition_key = ?",
+                (principal_id, partition_key),
+            ).fetchone()
+
+            allowed_layers = sorted({normalize_key(layer) for layer in payload.allowed_layers})
+
+            if existing is None:
+                acl = {
+                    "id": create_id("acl"),
+                    "principal_id": principal_id,
+                    "tenant_id": principal["tenant_id"],
+                    "partition_key": partition_key,
+                    "can_read": int(payload.can_read),
+                    "can_write": int(payload.can_write),
+                    "allowed_layers": to_json(allowed_layers),
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                }
+                conn.execute(
+                    """
+                    INSERT INTO principal_partition_acl (
+                      id, principal_id, tenant_id, partition_key, can_read, can_write, allowed_layers, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        acl["id"],
+                        acl["principal_id"],
+                        acl["tenant_id"],
+                        acl["partition_key"],
+                        acl["can_read"],
+                        acl["can_write"],
+                        acl["allowed_layers"],
+                        acl["created_at"],
+                        acl["updated_at"],
+                    ),
+                )
+            else:
+                acl = dict(existing)
+                acl.update(
+                    {
+                        "can_read": int(payload.can_read),
+                        "can_write": int(payload.can_write),
+                        "allowed_layers": to_json(allowed_layers),
+                        "updated_at": timestamp,
+                    }
+                )
+                conn.execute(
+                    """
+                    UPDATE principal_partition_acl
+                    SET can_read = ?, can_write = ?, allowed_layers = ?, updated_at = ?
+                    WHERE principal_id = ? AND partition_key = ?
+                    """,
+                    (
+                        acl["can_read"],
+                        acl["can_write"],
+                        acl["allowed_layers"],
+                        acl["updated_at"],
+                        principal_id,
+                        partition_key,
+                    ),
+                )
+
+            return self._serialize_acl(acl)
+
+    def list_principal_acl(self, principal_id: str) -> list[dict[str, Any]]:
+        with self.store.connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM principal_partition_acl WHERE principal_id = ? ORDER BY partition_key",
+                (principal_id,),
+            ).fetchall()
+        return [self._serialize_acl(dict(row)) for row in rows]
 
     def create_record(self, payload: CreateRecordRequest) -> dict[str, Any]:
         partition_key = normalize_key(payload.partition_key)
@@ -304,7 +439,12 @@ class HubService:
             "createdMemories": created_memories,
         }
 
-    def query(self, payload: QueryRequest) -> dict[str, Any]:
+    def query(
+        self,
+        payload: QueryRequest,
+        *,
+        partition_layer_rules: dict[str, set[str]] | None = None,
+    ) -> dict[str, Any]:
         with self.store.connection() as conn:
             self._assert_tenant(conn, payload.tenant_id)
             partition_keys = [normalize_key(item) for item in payload.partitions if item.strip()]
@@ -357,12 +497,27 @@ class HubService:
                 parameters,
             ).fetchall()
 
+        filtered_rows = []
+        for row in rows:
+            if partition_layer_rules is None:
+                filtered_rows.append(row)
+                continue
+
+            partition_key = str(row["partition_key"])
+            allowed_layers = partition_layer_rules.get(partition_key)
+            if not allowed_layers:
+                continue
+            row_layer = str(row["layer"])
+            if row_layer not in allowed_layers:
+                continue
+            filtered_rows.append(row)
+
         query_vector_list = self._safe_embed([payload.query])
         query_vector = query_vector_list[0] if query_vector_list else None
         retrieval = self.config.retrieval
         scored: list[dict[str, Any]] = []
 
-        for row in rows:
+        for row in filtered_rows:
             record = self._serialize_record(dict(row))
             chunk_text = str(row["chunk_text"])
             chunk_vector = from_json(row["chunk_vector"], None)
@@ -441,7 +596,7 @@ class HubService:
         return {
             "items": items,
             "retrieval": {
-                "candidateCount": len(rows),
+                "candidateCount": len(filtered_rows),
                 "scoredCount": len(scored),
                 "usedEmbeddings": bool(query_vector),
                 "usedRerank": any(item["trace"]["rerank"] is not None for item in items),
@@ -502,6 +657,31 @@ class HubService:
             "kind": agent["kind"],
             "metadata": from_json(agent.get("metadata"), {}),
             "createdAt": agent["created_at"],
+        }
+
+    def _serialize_principal(self, principal: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": principal["id"],
+            "tenantId": principal["tenant_id"],
+            "name": principal["name"],
+            "kind": principal["kind"],
+            "metadata": from_json(principal.get("metadata"), {}),
+            "disabled": bool(principal.get("disabled", 0)),
+            "createdAt": principal["created_at"],
+            "lastUsedAt": principal.get("last_used_at"),
+        }
+
+    def _serialize_acl(self, acl: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": acl["id"],
+            "principalId": acl["principal_id"],
+            "tenantId": acl["tenant_id"],
+            "partitionKey": acl["partition_key"],
+            "canRead": bool(acl["can_read"]),
+            "canWrite": bool(acl["can_write"]),
+            "allowedLayers": from_json(acl.get("allowed_layers"), ["l0", "l1", "l2"]),
+            "createdAt": acl["created_at"],
+            "updatedAt": acl["updated_at"],
         }
 
     def _serialize_record(self, record: dict[str, Any]) -> dict[str, Any]:

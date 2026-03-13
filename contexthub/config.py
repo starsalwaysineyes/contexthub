@@ -25,6 +25,12 @@ class ProviderConfig:
 
 
 @dataclass(slots=True)
+class AuthConfig:
+    enabled: bool
+    admin_token: str
+
+
+@dataclass(slots=True)
 class AppConfig:
     port: int
     data_dir: Path
@@ -32,6 +38,7 @@ class AppConfig:
     retrieval: RetrievalConfig
     embedding: ProviderConfig
     rerank: ProviderConfig
+    auth: AuthConfig
 
 
 def _get_bool(name: str, default: bool) -> bool:
@@ -82,5 +89,9 @@ def load_config() -> AppConfig:
             base_url=os.environ.get("CONTEXT_HUB_RERANK_BASE_URL", "https://cloud.infini-ai.com/maas/v1").rstrip("/"),
             api_key=os.environ.get("CONTEXT_HUB_RERANK_API_KEY", ""),
             model=os.environ.get("CONTEXT_HUB_RERANK_MODEL", "bge-reranker-v2-m3"),
+        ),
+        auth=AuthConfig(
+            enabled=_get_bool("CONTEXT_HUB_ENABLE_AUTH", False),
+            admin_token=os.environ.get("CONTEXT_HUB_ADMIN_TOKEN", ""),
         ),
     )

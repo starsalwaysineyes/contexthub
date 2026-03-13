@@ -1,98 +1,16 @@
 openapi: 3.1.0
 info:
   title: ContextHub API
-  version: 0.2.0
+  version: 0.3.0
   description: Agent-native context backend API.
 servers:
   - url: http://127.0.0.1:4040
-paths:
-  /health:
-    get:
-      summary: Service health and provider readiness
-      responses:
-        "200":
-          description: OK
-  /v1/tenants:
-    post:
-      summary: Create or return a tenant by slug
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateTenantRequest"
-      responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Tenant"
-  /v1/partitions:
-    post:
-      summary: Create or return a partition
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreatePartitionRequest"
-      responses:
-        "201":
-          description: Created
-  /v1/agents:
-    post:
-      summary: Register an agent
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RegisterAgentRequest"
-      responses:
-        "201":
-          description: Created
-  /v1/records:
-    post:
-      summary: Write a curated record
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateRecordRequest"
-      responses:
-        "201":
-          description: Created
-  /v1/query:
-    post:
-      summary: Query records with optional rerank
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/QueryRequest"
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/QueryResponse"
-  /v1/sessions/commit:
-    post:
-      summary: Commit a session and optional memory entries
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CommitSessionRequest"
-      responses:
-        "201":
-          description: Created
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
   schemas:
     Tenant:
       type: object
@@ -154,6 +72,33 @@ components:
         metadata:
           type: object
           additionalProperties: true
+    CreatePrincipalRequest:
+      type: object
+      required: [tenantId, name]
+      properties:
+        tenantId:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+    UpsertPrincipalAclRequest:
+      type: object
+      required: [partitionKey]
+      properties:
+        partitionKey:
+          type: string
+        canRead:
+          type: boolean
+        canWrite:
+          type: boolean
+        allowedLayers:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecordLayer"
     CreateRecordRequest:
       type: object
       required: [tenantId, partitionKey, type, title, text]
@@ -254,3 +199,144 @@ components:
           items:
             type: object
             additionalProperties: true
+paths:
+  /health:
+    get:
+      summary: Service health and provider readiness
+      responses:
+        "200":
+          description: OK
+  /v1/auth/me:
+    get:
+      security:
+        - bearerAuth: []
+      summary: Return current auth identity
+      responses:
+        "200":
+          description: OK
+  /v1/tenants:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Create or return a tenant by slug
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+  /v1/partitions:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Create or return a partition
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePartitionRequest"
+      responses:
+        "201":
+          description: Created
+  /v1/agents:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Register an agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterAgentRequest"
+      responses:
+        "201":
+          description: Created
+  /v1/principals:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Create a principal and return its token once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePrincipalRequest"
+      responses:
+        "201":
+          description: Created
+  /v1/principals/{principalId}/acl:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Create or update partition ACL for a principal
+      parameters:
+        - name: principalId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertPrincipalAclRequest"
+      responses:
+        "201":
+          description: Created
+  /v1/records:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Write a curated record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRecordRequest"
+      responses:
+        "201":
+          description: Created
+  /v1/query:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Query records with optional rerank
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueryRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryResponse"
+  /v1/sessions/commit:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Commit a session and optional memory entries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommitSessionRequest"
+      responses:
+        "201":
+          description: Created

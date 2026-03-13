@@ -10,6 +10,13 @@
 - add import jobs for local Markdown memory/archive material
 - keep retrieval explainable and debuggable
 
+Current status:
+
+- `L0/L1/L2` explicit model: done
+- first-pass auth + partition ACL: done
+- upload + derivation design: done
+- import jobs: next
+
 ### Phase 2 - adapter readiness
 
 - ship OpenClaw adapter examples
@@ -66,7 +73,7 @@ Cutover checklist:
 
 1. explicit layer model done
 2. upload + derivation design done
-3. first-pass auth + ACL
+3. first-pass auth + ACL done
 4. import pipeline for local materials
 5. adapter examples
 6. plugin design
