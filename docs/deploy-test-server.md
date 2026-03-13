@@ -50,6 +50,11 @@ CONTEXT_HUB_HEALTH_RETRIES=30 \
 - initial bootstrap is intentionally conservative: it validates service lifecycle first, not full remote provider integration
 - because the service binds to `127.0.0.1`, it is reachable only from the server itself until a reverse proxy or tunnel is added
 - if remote derivation/embedding is needed, fill in `/opt/contexthub/.env` with the real provider credentials after bootstrap
+- current validated remote shape uses one OpenAI-compatible provider family for all three paths:
+  - abstraction model: `deepseek-v3`
+  - embedding model: `bge-m3`
+  - rerank model: `bge-reranker-v2-m3`
+- deployment lesson learned: repo sync alone is not enough; the script must restart `contexthub` after pull or the server keeps serving old code
 - the next hardening step is queued-job recovery after process restart
 
 ## Manual validation

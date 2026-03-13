@@ -56,8 +56,10 @@ Current status:
 
 - baseline bootstrap is done: `uv` + Python 3.12 + repo sync + `systemd` service (`contexthub`) + localhost health check
 - smoke write/query on server is validated
-- async derive job status lifecycle is validated (`queued/running/failed`) under missing-provider configuration
-- next: fill remote provider env, validate successful derive path, then import selected local materials
+- remote provider env is now configured on the server
+- async derive success path is validated on server with embeddings + rerank enabled
+- deploy script now force-restarts the service after repo sync so freshly pulled code is actually loaded
+- next: import selected local materials, then harden queued-job recovery after restart
 
 Migration scope should include:
 
