@@ -75,7 +75,24 @@ class FakeAbstractor:
         return payload
 
 
-def build_service(tmp_path: Path) -> HubService:
+class StringImportanceAbstractor(FakeAbstractor):
+    def derive(self, *, title, text, source_layer, emit_layers, prompt_preset, model=None):
+        payload = super().derive(
+            title=title,
+            text=text,
+            source_layer=source_layer,
+            emit_layers=emit_layers,
+            prompt_preset=prompt_preset,
+            model=model,
+        )
+        if "l1" in payload:
+            payload["l1"]["importance"] = "medium"
+        if "l0" in payload:
+            payload["l0"]["importance"] = "4"
+        return payload
+
+
+def build_service(tmp_path: Path, abstractor=None) -> HubService:
     database_path = tmp_path / "contexthub.db"
     store = SQLiteStore(database_path)
     store.init()
@@ -99,7 +116,7 @@ def build_service(tmp_path: Path) -> HubService:
         store=store,
         embedder=FakeEmbedder(),
         reranker=FakeReranker(),
-        abstractor=FakeAbstractor(),
+        abstractor=abstractor or FakeAbstractor(),
         config=config,
     )
 
@@ -275,6 +292,33 @@ def test_import_resource_can_derive_l1_and_l0(tmp_path: Path) -> None:
     replay_links = service.list_record_links(result["record"]["id"])
     assert len(replay_links) == 2
     assert all(link["metadata"]["jobId"] == replay["derivation"]["job"]["id"] for link in replay_links)
+
+
+def test_import_resource_accepts_string_importance_from_derive(tmp_path: Path) -> None:
+    service = build_service(tmp_path, abstractor=StringImportanceAbstractor())
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo-importance", name="Demo Importance"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+
+    result = service.import_resource(
+        ImportResourceRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="resource",
+            targetLayer="l2",
+            title="Importance test",
+            content={"kind": "inline_text", "text": "importance coercion"},
+            derive={
+                "enabled": True,
+                "mode": "sync",
+                "emitLayers": ["l1", "l0"],
+                "provider": "litellm",
+            },
+        )
+    )
+
+    by_layer = {record["layer"]: record for record in result["derivation"]["records"]}
+    assert by_layer["l1"]["importance"] == 3.0
+    assert by_layer["l0"]["importance"] == 4.0
 
 
 def test_app_can_run_async_derivation_job_and_fetch_links(tmp_path: Path, monkeypatch) -> None:

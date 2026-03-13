@@ -1033,7 +1033,7 @@ class HubService:
                     tags=layer_payload.get("tags", payload.tags),
                     metadata=metadata,
                     manualSummary=layer_payload.get("manualSummary", ""),
-                    importance=float(layer_payload.get("importance", 3.0)),
+                    importance=self._coerce_importance(layer_payload.get("importance", 3.0)),
                     pinned=bool(layer_payload.get("pinned", False)),
                     idempotencyKey=f"derive:{source_record['id']}:{layer}:{payload.derive.prompt_preset}",
                 )
@@ -1054,6 +1054,30 @@ class HubService:
         ).fetchone()
         if row is None:
             raise HubError(f"Unknown partition: {partition_key}")
+
+    def _coerce_importance(self, value: Any, default: float = 3.0) -> float:
+        if value is None or isinstance(value, bool):
+            return default
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if not normalized:
+                return default
+            mapped = {
+                "low": 2.0,
+                "medium": 3.0,
+                "med": 3.0,
+                "high": 4.0,
+                "critical": 5.0,
+            }.get(normalized)
+            if mapped is not None:
+                return mapped
+            try:
+                return float(normalized)
+            except ValueError:
+                return default
+        return default
 
     def _safe_embed(self, inputs: list[str]) -> list[list[float]] | None:
         try:
