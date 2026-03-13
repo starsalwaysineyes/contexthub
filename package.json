@@ -1,0 +1,16 @@
+{
+  "name": "contexthub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent-native context backend for multi-agent memory, resources, and retrieval.",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "node --test",
+    "example": "node examples/quickstart.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
