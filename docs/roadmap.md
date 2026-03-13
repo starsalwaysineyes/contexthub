@@ -14,8 +14,10 @@
 - first-pass bearer auth + partition ACL
 - upload/derivation design with LiteLLM as abstraction gateway
 - `POST /v1/resources/import` MVP (`inline_text`) with optional sync derivation
-- next: bulk import for Markdown archives and daily memory files
-- next: stronger duplicate control and write throttling hooks
+- derivation lineage persistence (`derivation_jobs` + `record_links`)
+- first-pass async derive lifecycle with persisted status + inspection endpoints
+- bulk import for Markdown archives and daily memory files
+- next: retry policy hardening and restart recovery for queued jobs
 
 ## Phase 2 - make it agent-friendly
 

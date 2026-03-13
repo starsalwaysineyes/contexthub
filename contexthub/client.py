@@ -38,6 +38,12 @@ class ContextHubClient:
     def import_resource(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/resources/import", payload)
 
+    def get_derivation_job(self, job_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/v1/derivation-jobs/{job_id}")
+
+    def list_record_links(self, record_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/v1/records/{record_id}/links")
+
     def query(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/query", payload)
 

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+import contexthub.app as app_module
 from contexthub.app import create_app
 from contexthub.config import AbstractionConfig, AppConfig, AuthConfig, ProviderConfig, RetrievalConfig
 from contexthub.schemas import (
@@ -235,14 +236,95 @@ def test_import_resource_can_derive_l1_and_l0(tmp_path: Path) -> None:
                 "provider": "litellm",
                 "promptPreset": "archive_and_memory",
             },
+            idempotencyKey="meeting-transcript-import",
         )
     )
 
     assert result["record"]["layer"] == "l2"
     assert result["derivation"]["status"] == "completed"
+    assert result["derivation"]["job"]["status"] == "completed"
     assert len(result["derivation"]["records"]) == 2
+    assert len(result["derivation"]["links"]) == 2
     layers = {record["layer"] for record in result["derivation"]["records"]}
     assert layers == {"l1", "l0"}
+
+    fetched_job = service.get_derivation_job(result["derivation"]["job"]["id"])
+    assert fetched_job["status"] == "completed"
+    fetched_links = service.list_record_links(result["record"]["id"])
+    assert len(fetched_links) == 2
+
+    replay = service.import_resource(
+        ImportResourceRequest(
+            tenantId=tenant["id"],
+            partitionKey="project-openclaw",
+            type="resource",
+            targetLayer="l2",
+            title="Meeting transcript",
+            content={"kind": "inline_text", "text": "We decided to keep manual curation first."},
+            derive={
+                "enabled": True,
+                "mode": "sync",
+                "emitLayers": ["l1", "l0"],
+                "provider": "litellm",
+                "promptPreset": "archive_and_memory",
+            },
+            idempotencyKey="meeting-transcript-import",
+        )
+    )
+    assert replay["record"]["id"] == result["record"]["id"]
+    replay_links = service.list_record_links(result["record"]["id"])
+    assert len(replay_links) == 2
+    assert all(link["metadata"]["jobId"] == replay["derivation"]["job"]["id"] for link in replay_links)
+
+
+def test_app_can_run_async_derivation_job_and_fetch_links(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CONTEXT_HUB_DATABASE_PATH", str(tmp_path / "derive-api.db"))
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_EMBEDDINGS", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_RERANK", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_AUTH", "true")
+    monkeypatch.setenv("CONTEXT_HUB_ADMIN_TOKEN", "admin-secret")
+    monkeypatch.setattr(app_module, "LiteLLMAbstractionClient", lambda config: FakeAbstractor())
+    app = create_app()
+    client = TestClient(app)
+    admin_headers = {"Authorization": "Bearer admin-secret"}
+
+    tenant = client.post(
+        "/v1/tenants",
+        headers=admin_headers,
+        json={"slug": "demo", "name": "Demo"},
+    ).json()
+    client.post(
+        "/v1/partitions",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "key": "memory", "name": "Memory"},
+    ).raise_for_status()
+
+    response = client.post(
+        "/v1/resources/import",
+        headers=admin_headers,
+        json={
+            "tenantId": tenant["id"],
+            "partitionKey": "memory",
+            "targetLayer": "l2",
+            "title": "Raw note",
+            "content": {"kind": "inline_text", "text": "raw body"},
+            "derive": {"enabled": True, "mode": "async", "emitLayers": ["l1", "l0"], "provider": "litellm"},
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["derivation"]["status"] == "queued"
+    assert body["derivation"]["effectiveMode"] == "async"
+
+    job = client.get(f"/v1/derivation-jobs/{body['derivation']['job']['id']}", headers=admin_headers)
+    assert job.status_code == 200
+    assert job.json()["status"] == "completed"
+    assert job.json()["effectiveMode"] == "async"
+    assert job.json()["metadata"]["attemptCount"] == 1
+
+    links = client.get(f"/v1/records/{body['record']['id']}/links", headers=admin_headers)
+    assert links.status_code == 200
+    assert len(links.json()["items"]) == 2
 
 
 def test_health_route(tmp_path: Path, monkeypatch) -> None:

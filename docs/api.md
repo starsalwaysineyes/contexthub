@@ -69,7 +69,9 @@ Import a resource into a target layer and optionally derive abstraction layers.
 Current MVP supports:
 
 - `content.kind = "inline_text"`
-- optional derivation via LiteLLM in sync mode (requested async is accepted but executed as sync in current MVP)
+- optional derivation via LiteLLM in `sync` or background `async` mode
+- persisted derivation job inspection via `GET /v1/derivation-jobs/{jobId}`
+- persisted lineage via `GET /v1/records/{recordId}/links`
 
 Request example:
 
@@ -94,7 +96,7 @@ Request example:
 }
 ```
 
-Response example:
+Sync response example:
 
 ```json
 {
@@ -107,13 +109,64 @@ Response example:
     "mode": "sync",
     "effectiveMode": "sync",
     "plannedLayers": ["l1", "l0"],
+    "job": {
+      "id": "derive_xxx",
+      "status": "completed",
+      "requestedLayers": ["l1", "l0"]
+    },
     "records": [
       { "id": "record_l1_xxx", "layer": "l1" },
       { "id": "record_l0_xxx", "layer": "l0" }
+    ],
+    "links": [
+      { "sourceRecordId": "record_source_xxx", "targetRecordId": "record_l1_xxx", "relation": "derived_from" },
+      { "sourceRecordId": "record_source_xxx", "targetRecordId": "record_l0_xxx", "relation": "derived_from" }
     ]
   }
 }
 ```
+
+Async response example:
+
+```json
+{
+  "record": {
+    "id": "record_source_xxx",
+    "layer": "l2"
+  },
+  "derivation": {
+    "status": "queued",
+    "mode": "async",
+    "effectiveMode": "async",
+    "plannedLayers": ["l1", "l0"],
+    "job": {
+      "id": "derive_xxx",
+      "status": "queued"
+    },
+    "records": [],
+    "links": []
+  }
+}
+```
+
+## `GET /v1/derivation-jobs/{jobId}`
+
+Fetch a persisted derivation job.
+
+Notes:
+
+- useful for debugging import/derive behavior
+- `status` now transitions through `queued -> running -> completed|failed` for async jobs
+- current async worker is in-process background execution; restart recovery is the next hardening step
+
+## `GET /v1/records/{recordId}/links`
+
+List record links where the given record is the source.
+
+Notes:
+
+- current relation emitted by import derive is `derived_from`
+- link metadata carries `jobId` and layer mapping
 
 ## `POST /v1/query`
 

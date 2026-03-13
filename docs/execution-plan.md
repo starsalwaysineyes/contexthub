@@ -16,7 +16,10 @@ Current status:
 - first-pass auth + partition ACL: done
 - upload + derivation design: done
 - `/v1/resources/import` MVP (`inline_text`) + optional sync LiteLLM derivation: done
-- local markdown/archive bulk import jobs: next
+- derivation lineage persistence (`derivation_jobs` + `record_links`): done
+- local markdown/archive bulk import jobs: done (first-pass CLI)
+- first-pass true async derive lifecycle (`mode=async` background execution + persisted status): done
+- next: retries policy hardening / restart recovery for queued jobs
 
 ### Phase 2 - adapter readiness
 

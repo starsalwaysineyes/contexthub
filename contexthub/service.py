@@ -4,7 +4,7 @@ import hashlib
 import secrets
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from contexthub.config import AppConfig
 from contexthub.providers import EmbeddingClient, LiteLLMAbstractionClient, RerankClient
@@ -305,7 +305,40 @@ class HubService:
             ).fetchall()
         return [self._serialize_acl(dict(row)) for row in rows]
 
-    def import_resource(self, payload: ImportResourceRequest) -> dict[str, Any]:
+    def get_record(self, record_id: str) -> dict[str, Any]:
+        with self.store.connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+        if row is None:
+            raise HubError(f"Unknown record: {record_id}")
+        return self._serialize_record(dict(row))
+
+    def get_derivation_job(self, job_id: str) -> dict[str, Any]:
+        with self.store.connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM derivation_jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            raise HubError(f"Unknown derivation job: {job_id}")
+        return self._serialize_derivation_job(dict(row))
+
+    def list_record_links(self, record_id: str) -> list[dict[str, Any]]:
+        with self.store.connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM record_links WHERE source_record_id = ? ORDER BY created_at, target_record_id",
+                (record_id,),
+            ).fetchall()
+        return [self._serialize_record_link(dict(row)) for row in rows]
+
+    def import_resource(
+        self,
+        payload: ImportResourceRequest,
+        *,
+        schedule_async: Callable[[str], None] | None = None,
+    ) -> dict[str, Any]:
         if payload.content.kind != "inline_text":
             raise HubError("Only content.kind=inline_text is implemented in the current MVP")
         if not payload.content.text or not payload.content.text.strip():
@@ -334,18 +367,46 @@ class HubService:
             "mode": payload.derive.mode,
             "effectiveMode": payload.derive.mode,
             "plannedLayers": payload.derive.emit_layers,
+            "job": None,
             "records": [],
+            "links": [],
         }
 
         if payload.derive.enabled:
-            derived_records = self._derive_records(payload, source_record)
-            derivation = {
-                "status": "completed",
-                "mode": payload.derive.mode,
-                "effectiveMode": "sync",
-                "plannedLayers": payload.derive.emit_layers,
-                "records": derived_records,
-            }
+            requested_async = payload.derive.mode == "async"
+            effective_mode = "async" if requested_async and schedule_async is not None else "sync"
+            job = self._create_derivation_job(
+                payload,
+                source_record,
+                status="queued" if effective_mode == "async" else "running",
+                effective_mode=effective_mode,
+            )
+
+            if effective_mode == "async":
+                schedule_async(job["id"])
+                derivation = {
+                    "status": "queued",
+                    "mode": payload.derive.mode,
+                    "effectiveMode": effective_mode,
+                    "plannedLayers": payload.derive.emit_layers,
+                    "job": job,
+                    "records": [],
+                    "links": [],
+                }
+            else:
+                job = self.run_derivation_job(job["id"], max_attempts=1)
+                if job["status"] != "completed":
+                    raise HubError(job.get("errorMessage") or "Derivation failed")
+                derived_record_ids = job["metadata"].get("derivedRecordIds", [])
+                derivation = {
+                    "status": job["status"],
+                    "mode": payload.derive.mode,
+                    "effectiveMode": effective_mode,
+                    "plannedLayers": payload.derive.emit_layers,
+                    "job": job,
+                    "records": [self.get_record(record_id) for record_id in derived_record_ids],
+                    "links": self.list_record_links(source_record["id"]),
+                }
 
         return {
             "record": source_record,
@@ -660,6 +721,263 @@ class HubService:
             },
         }
 
+    def run_derivation_job(self, job_id: str, *, max_attempts: int = 2) -> dict[str, Any]:
+        row = self._get_derivation_job_row(job_id)
+        source_record = self.get_record(row["source_record_id"])
+        effective_mode = row.get("effective_mode") or "sync"
+        attempts = max(1, max_attempts)
+        last_error = None
+
+        for attempt in range(1, attempts + 1):
+            self._update_derivation_job(
+                job_id,
+                status="running",
+                effective_mode=effective_mode,
+                error_message=None,
+                metadata={"attemptCount": attempt},
+                finished_at=None,
+            )
+            try:
+                payload = self._build_import_request_from_job(row, source_record)
+                derived_records = self._derive_records(payload, source_record)
+                links = [
+                    self._create_record_link(
+                        tenant_id=source_record["tenantId"],
+                        source_record_id=source_record["id"],
+                        target_record_id=record["id"],
+                        relation="derived_from",
+                        metadata={
+                            "jobId": job_id,
+                            "sourceLayer": source_record["layer"],
+                            "targetLayer": record["layer"],
+                        },
+                    )
+                    for record in derived_records
+                ]
+                return self._update_derivation_job(
+                    job_id,
+                    status="completed",
+                    effective_mode=effective_mode,
+                    metadata={
+                        "attemptCount": attempt,
+                        "derivedRecordIds": [record["id"] for record in derived_records],
+                        "linkIds": [link["id"] for link in links],
+                    },
+                    finished_at=now_iso(),
+                )
+            except Exception as error:
+                last_error = str(error)
+
+        return self._update_derivation_job(
+            job_id,
+            status="failed",
+            effective_mode=effective_mode,
+            error_message=last_error,
+            metadata={"attemptCount": attempts},
+            finished_at=now_iso(),
+        )
+
+    def _get_derivation_job_row(self, job_id: str) -> dict[str, Any]:
+        with self.store.connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM derivation_jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+        if row is None:
+            raise HubError(f"Unknown derivation job: {job_id}")
+        return dict(row)
+
+    def _build_import_request_from_job(
+        self,
+        job: dict[str, Any],
+        source_record: dict[str, Any],
+    ) -> ImportResourceRequest:
+        metadata = from_json(job.get("metadata"), {})
+        return ImportResourceRequest(
+            tenantId=job["tenant_id"],
+            partitionKey=job["partition_key"],
+            type=metadata.get("recordType", "resource"),
+            targetLayer=source_record["layer"],
+            title=source_record["title"],
+            content={"kind": "inline_text", "text": source_record["text"]},
+            source=metadata.get("source"),
+            tags=metadata.get("tags", []),
+            metadata=metadata.get("baseMetadata", {}),
+            derive={
+                "enabled": True,
+                "mode": job["mode"],
+                "emitLayers": from_json(job.get("requested_layers"), []),
+                "strategy": metadata.get("strategy", "preserve_manual"),
+                "promptPreset": job["prompt_preset"],
+                "provider": job["provider"],
+                "model": job.get("model"),
+            },
+        )
+
+    def _create_derivation_job(
+        self,
+        payload: ImportResourceRequest,
+        source_record: dict[str, Any],
+        *,
+        status: str,
+        effective_mode: str,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        job = {
+            "id": create_id("derive"),
+            "tenant_id": payload.tenant_id,
+            "partition_key": normalize_key(payload.partition_key),
+            "source_record_id": source_record["id"],
+            "status": status,
+            "mode": payload.derive.mode,
+            "effective_mode": effective_mode,
+            "requested_layers": to_json([normalize_key(layer) for layer in payload.derive.emit_layers]),
+            "provider": payload.derive.provider,
+            "model": payload.derive.model or self.config.abstraction.model,
+            "prompt_preset": payload.derive.prompt_preset,
+            "error_message": None,
+            "metadata": to_json(
+                {
+                    "strategy": payload.derive.strategy,
+                    "baseMetadata": payload.metadata,
+                    "tags": payload.tags,
+                    "source": payload.source,
+                    "recordType": payload.type,
+                    "attemptCount": 0,
+                    "derivedRecordIds": [],
+                    "linkIds": [],
+                }
+            ),
+            "created_at": timestamp,
+            "updated_at": timestamp,
+            "finished_at": None,
+        }
+        with self.store.connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO derivation_jobs (
+                  id, tenant_id, partition_key, source_record_id, status, mode, effective_mode,
+                  requested_layers, provider, model, prompt_preset, error_message, metadata,
+                  created_at, updated_at, finished_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    job["id"],
+                    job["tenant_id"],
+                    job["partition_key"],
+                    job["source_record_id"],
+                    job["status"],
+                    job["mode"],
+                    job["effective_mode"],
+                    job["requested_layers"],
+                    job["provider"],
+                    job["model"],
+                    job["prompt_preset"],
+                    job["error_message"],
+                    job["metadata"],
+                    job["created_at"],
+                    job["updated_at"],
+                    job["finished_at"],
+                ),
+            )
+        return self._serialize_derivation_job(job)
+
+    def _update_derivation_job(
+        self,
+        job_id: str,
+        *,
+        status: str,
+        effective_mode: str | None,
+        error_message: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        finished_at: str | None = None,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        with self.store.connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM derivation_jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+            if row is None:
+                raise HubError(f"Unknown derivation job: {job_id}")
+            existing = dict(row)
+            merged_metadata = from_json(existing.get("metadata"), {})
+            if metadata:
+                merged_metadata.update(metadata)
+            conn.execute(
+                """
+                UPDATE derivation_jobs
+                SET status = ?, effective_mode = ?, error_message = ?, metadata = ?, updated_at = ?, finished_at = ?
+                WHERE id = ?
+                """,
+                (
+                    status,
+                    effective_mode,
+                    error_message,
+                    to_json(merged_metadata),
+                    timestamp,
+                    finished_at,
+                    job_id,
+                ),
+            )
+            updated = conn.execute(
+                "SELECT * FROM derivation_jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+        return self._serialize_derivation_job(dict(updated))
+
+    def _create_record_link(
+        self,
+        *,
+        tenant_id: str,
+        source_record_id: str,
+        target_record_id: str,
+        relation: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        timestamp = now_iso()
+        payload = {
+            "id": create_id("link"),
+            "tenant_id": tenant_id,
+            "source_record_id": source_record_id,
+            "target_record_id": target_record_id,
+            "relation": normalize_key(relation),
+            "metadata": to_json(metadata or {}),
+            "created_at": timestamp,
+        }
+        with self.store.connection() as conn:
+            existing = conn.execute(
+                "SELECT * FROM record_links WHERE source_record_id = ? AND target_record_id = ? AND relation = ?",
+                (source_record_id, target_record_id, payload["relation"]),
+            ).fetchone()
+            if existing is not None:
+                existing_link = dict(existing)
+                if metadata:
+                    merged_metadata = from_json(existing_link.get("metadata"), {})
+                    merged_metadata.update(metadata)
+                    conn.execute(
+                        "UPDATE record_links SET metadata = ? WHERE id = ?",
+                        (to_json(merged_metadata), existing_link["id"]),
+                    )
+                    existing_link["metadata"] = to_json(merged_metadata)
+                return self._serialize_record_link(existing_link)
+            conn.execute(
+                """
+                INSERT INTO record_links (id, tenant_id, source_record_id, target_record_id, relation, metadata, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["id"],
+                    payload["tenant_id"],
+                    payload["source_record_id"],
+                    payload["target_record_id"],
+                    payload["relation"],
+                    payload["metadata"],
+                    payload["created_at"],
+                ),
+            )
+        return self._serialize_record_link(payload)
+
     def _derive_records(self, payload: ImportResourceRequest, source_record: dict[str, Any]) -> list[dict[str, Any]]:
         if payload.derive.provider.lower() != "litellm":
             raise HubError("Only derive.provider=litellm is implemented in the current MVP")
@@ -803,6 +1121,37 @@ class HubService:
             "allowedLayers": from_json(acl.get("allowed_layers"), ["l0", "l1", "l2"]),
             "createdAt": acl["created_at"],
             "updatedAt": acl["updated_at"],
+        }
+
+    def _serialize_derivation_job(self, job: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": job["id"],
+            "tenantId": job["tenant_id"],
+            "partitionKey": job["partition_key"],
+            "sourceRecordId": job["source_record_id"],
+            "status": job["status"],
+            "mode": job["mode"],
+            "effectiveMode": job.get("effective_mode"),
+            "requestedLayers": from_json(job.get("requested_layers"), []),
+            "provider": job["provider"],
+            "model": job.get("model"),
+            "promptPreset": job["prompt_preset"],
+            "errorMessage": job.get("error_message"),
+            "metadata": from_json(job.get("metadata"), {}),
+            "createdAt": job["created_at"],
+            "updatedAt": job["updated_at"],
+            "finishedAt": job.get("finished_at"),
+        }
+
+    def _serialize_record_link(self, link: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": link["id"],
+            "tenantId": link["tenant_id"],
+            "sourceRecordId": link["source_record_id"],
+            "targetRecordId": link["target_record_id"],
+            "relation": link["relation"],
+            "metadata": from_json(link.get("metadata"), {}),
+            "createdAt": link["created_at"],
         }
 
     def _serialize_record(self, record: dict[str, Any]) -> dict[str, Any]:

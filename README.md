@@ -21,7 +21,8 @@ This repo now uses a Python + uv stack for better runtime stability and dependen
 - Explicit `L0/L1/L2` layer model on records and query filters
 - First-pass bearer auth + partition ACL
 - Import MVP: `POST /v1/resources/import` (`inline_text`)
-- Optional sync abstraction via LiteLLM for derived `L1/L0`
+- LiteLLM-backed derivation for `L1/L0` with real `sync` / `async` execution modes
+- Derivation lineage persistence (`derivation_jobs` + `record_links`)
 - Retrieval pipeline with lexical score + optional embeddings + optional rerank
 - Python client SDK in `contexthub/client.py`
 - Adapter helper module and example scripts for OpenClaw/Codex/Claude Code
@@ -64,6 +65,8 @@ Default endpoints:
 - `POST /v1/principals/{principalId}/acl`
 - `POST /v1/records`
 - `POST /v1/resources/import`
+- `GET /v1/derivation-jobs/{jobId}`
+- `GET /v1/records/{recordId}/links`
 - `POST /v1/query`
 - `POST /v1/sessions/commit`
 
@@ -112,7 +115,9 @@ GitHub Actions runs the same secret scan and pytest on every push/PR.
 - [x] Add local Markdown import CLI (`contexthub import-markdown`)
 - [x] Add OpenClaw adapter examples + one-command helper scripts
 - [x] Add Codex and Claude Code adapter examples
-- [ ] Add Markdown/archive ingestion jobs
+- [x] Add Markdown/archive ingestion jobs
+- [x] Persist derivation lineage (`derivation_jobs` + `record_links`)
+- [x] Add first-pass real async derivation execution via persisted jobs
 - [ ] Deploy first managed instance to target server
 
 ## Repo layout

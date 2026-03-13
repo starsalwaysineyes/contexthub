@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from contexthub.config import load_config
@@ -38,7 +38,7 @@ def create_app() -> FastAPI:
     )
     security = SecurityManager(store, config.auth)
 
-    app = FastAPI(title="ContextHub API", version="0.4.0")
+    app = FastAPI(title="ContextHub API", version="0.6.0")
 
     def get_auth(request: Request) -> AuthContext:
         return security.authenticate_request(request)
@@ -99,9 +99,32 @@ def create_app() -> FastAPI:
         return service.create_record(payload)
 
     @app.post("/v1/resources/import", status_code=201)
-    def import_resource(payload: ImportResourceRequest, auth: AuthContext = Depends(get_auth)) -> dict:
+    def import_resource(
+        payload: ImportResourceRequest,
+        background_tasks: BackgroundTasks,
+        auth: AuthContext = Depends(get_auth),
+    ) -> dict:
         security.ensure_partition_write(auth, payload.tenant_id, payload.partition_key)
-        return service.import_resource(payload)
+        return service.import_resource(
+            payload,
+            schedule_async=lambda job_id: background_tasks.add_task(
+                service.run_derivation_job,
+                job_id,
+                max_attempts=2,
+            ),
+        )
+
+    @app.get("/v1/derivation-jobs/{job_id}")
+    def get_derivation_job(job_id: str, auth: AuthContext = Depends(get_auth)) -> dict:
+        job = service.get_derivation_job(job_id)
+        security.ensure_partition_read(auth, job["tenantId"], job["partitionKey"])
+        return job
+
+    @app.get("/v1/records/{record_id}/links")
+    def list_record_links(record_id: str, auth: AuthContext = Depends(get_auth)) -> dict:
+        record = service.get_record(record_id)
+        security.ensure_partition_read(auth, record["tenantId"], record["partitionKey"])
+        return {"items": service.list_record_links(record_id)}
 
     @app.post("/v1/query")
     def query(payload: QueryRequest, auth: AuthContext = Depends(get_auth)) -> dict:

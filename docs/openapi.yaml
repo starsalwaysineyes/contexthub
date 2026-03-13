@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ContextHub API
-  version: 0.4.0
+  version: 0.6.0
   description: Agent-native context backend API.
 servers:
   - url: http://127.0.0.1:4040
@@ -270,6 +270,79 @@ components:
           type: object
           additionalProperties: true
 
+    DerivationJob:
+      type: object
+      additionalProperties: true
+      required: [id, tenantId, partitionKey, sourceRecordId, status, mode, requestedLayers, provider, promptPreset, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        partitionKey:
+          type: string
+        sourceRecordId:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        mode:
+          $ref: "#/components/schemas/DeriveMode"
+        effectiveMode:
+          oneOf:
+            - $ref: "#/components/schemas/DeriveMode"
+            - type: "null"
+        requestedLayers:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecordLayer"
+        provider:
+          type: string
+        model:
+          type: string
+        promptPreset:
+          $ref: "#/components/schemas/PromptPreset"
+        errorMessage:
+          oneOf:
+            - type: string
+            - type: "null"
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          oneOf:
+            - type: string
+              format: date-time
+            - type: "null"
+
+    RecordLink:
+      type: object
+      additionalProperties: true
+      required: [id, tenantId, sourceRecordId, targetRecordId, relation, metadata, createdAt]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        sourceRecordId:
+          type: string
+        targetRecordId:
+          type: string
+        relation:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
     CommitSessionRequest:
       type: object
       required: [tenantId, partitionKey]
@@ -419,7 +492,7 @@ paths:
     post:
       security:
         - bearerAuth: []
-      summary: Import resource and optionally derive layers
+      summary: Import resource, optionally derive layers sync/async, and persist lineage
       requestBody:
         required: true
         content:
@@ -429,6 +502,50 @@ paths:
       responses:
         "201":
           description: Created
+
+  /v1/derivation-jobs/{jobId}:
+    get:
+      security:
+        - bearerAuth: []
+      summary: Fetch a derivation job and its current status
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DerivationJob"
+
+  /v1/records/{recordId}/links:
+    get:
+      security:
+        - bearerAuth: []
+      summary: List record links for a source record
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RecordLink"
 
   /v1/query:
     post:

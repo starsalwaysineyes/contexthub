@@ -115,12 +115,51 @@ CREATE TABLE IF NOT EXISTS sessions (
   FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS derivation_jobs (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  partition_key TEXT NOT NULL,
+  source_record_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  effective_mode TEXT,
+  requested_layers TEXT NOT NULL DEFAULT '[]',
+  provider TEXT NOT NULL,
+  model TEXT,
+  prompt_preset TEXT NOT NULL,
+  error_message TEXT,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  finished_at TEXT,
+  FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE,
+  FOREIGN KEY (source_record_id) REFERENCES records (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS record_links (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  source_record_id TEXT NOT NULL,
+  target_record_id TEXT NOT NULL,
+  relation TEXT NOT NULL,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  UNIQUE (source_record_id, target_record_id, relation),
+  FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE,
+  FOREIGN KEY (source_record_id) REFERENCES records (id) ON DELETE CASCADE,
+  FOREIGN KEY (target_record_id) REFERENCES records (id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_partitions_tenant_key ON partitions (tenant_id, key);
 CREATE INDEX IF NOT EXISTS idx_principals_tenant_id ON principals (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_acl_principal_partition ON principal_partition_acl (principal_id, partition_key);
 CREATE INDEX IF NOT EXISTS idx_records_tenant_partition ON records (tenant_id, partition_key);
 CREATE INDEX IF NOT EXISTS idx_chunks_tenant_partition ON chunks (tenant_id, partition_key);
 CREATE INDEX IF NOT EXISTS idx_sessions_tenant_partition ON sessions (tenant_id, partition_key);
+CREATE INDEX IF NOT EXISTS idx_derivation_jobs_tenant_partition ON derivation_jobs (tenant_id, partition_key);
+CREATE INDEX IF NOT EXISTS idx_derivation_jobs_source_record ON derivation_jobs (source_record_id);
+CREATE INDEX IF NOT EXISTS idx_record_links_source_record ON record_links (source_record_id);
+CREATE INDEX IF NOT EXISTS idx_record_links_target_record ON record_links (target_record_id);
 """
 
 
@@ -170,6 +209,8 @@ class SQLiteStore:
             "records",
             "chunks",
             "sessions",
+            "derivation_jobs",
+            "record_links",
         ]
         with self.connection() as conn:
             return {

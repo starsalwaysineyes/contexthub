@@ -88,6 +88,14 @@ class SecurityManager:
             ).fetchall()
         return [self._serialize_acl(dict(row)) for row in rows]
 
+    def ensure_partition_read(self, auth: AuthContext, tenant_id: str, partition_key: str) -> None:
+        if auth.kind == "admin":
+            return
+        self.require_tenant_match(auth, tenant_id)
+        acl = self._lookup_acl(auth.principal_id, partition_key)
+        if acl is None or not acl["canRead"]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Read access denied")
+
     def ensure_partition_write(self, auth: AuthContext, tenant_id: str, partition_key: str) -> None:
         if auth.kind == "admin":
             return
