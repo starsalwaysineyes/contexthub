@@ -20,9 +20,9 @@ Current status:
 
 ### Phase 2 - adapter readiness
 
-- ship OpenClaw adapter examples
-- ship Codex and Claude Code adapter examples
-- add one-command helper scripts for session commit and query
+- ship OpenClaw adapter examples (done)
+- ship Codex and Claude Code adapter examples (done)
+- add one-command helper scripts for session commit and query (done)
 - verify that agents can write `L0`, write `L1`, and query `L2` safely
 
 ### Phase 3 - plugin design for OpenClaw

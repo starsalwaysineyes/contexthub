@@ -24,6 +24,7 @@ This repo now uses a Python + uv stack for better runtime stability and dependen
 - Optional sync abstraction via LiteLLM for derived `L1/L0`
 - Retrieval pipeline with lexical score + optional embeddings + optional rerank
 - Python client SDK in `contexthub/client.py`
+- Adapter helper module and example scripts for OpenClaw/Codex/Claude Code
 - Architecture/API docs in `docs/`
 
 ## Quick start (uv)
@@ -109,8 +110,8 @@ GitHub Actions runs the same secret scan and pytest on every push/PR.
 - [x] Add first-pass auth and partition ACL enforcement
 - [x] Implement `POST /v1/resources/import` MVP (`inline_text` + optional sync derivation)
 - [x] Add local Markdown import CLI (`contexthub import-markdown`)
-- [ ] Add OpenClaw adapter examples + one-command helper scripts
-- [ ] Add Codex and Claude Code adapter examples
+- [x] Add OpenClaw adapter examples + one-command helper scripts
+- [x] Add Codex and Claude Code adapter examples
 - [ ] Add Markdown/archive ingestion jobs
 - [ ] Deploy first managed instance to target server
 
@@ -131,6 +132,10 @@ contexthub/
   text.py
 scripts/
   check_secrets.py
+  openclaw-query.sh
+  openclaw-commit.sh
+  codex-commit.sh
+  claude-code-commit.sh
 docs/
   architecture.md
   api.md
@@ -139,6 +144,7 @@ docs/
   layer-model.md
   upload-derivation-design.md
   import-jobs.md
+  adapter-examples.md
   execution-plan.md
   agent-integration.md
   roadmap.md
@@ -154,4 +160,6 @@ legacy/
 - Layer mapping is documented in `docs/layer-model.md`.
 - Upload and auto-derivation design is documented in `docs/upload-derivation-design.md`.
 - Auth and partition ACL are documented in `docs/auth-acl.md`.
+- Import CLI usage is documented in `docs/import-jobs.md`.
+- Adapter examples are documented in `docs/adapter-examples.md`.
 - Next-step rollout order is documented in `docs/execution-plan.md`.

@@ -19,10 +19,10 @@
 
 ## Phase 2 - make it agent-friendly
 
-- publish adapter examples for OpenClaw, Codex, Claude Code, Gemini, and generic MCP clients
-- add session commit helpers and idempotent write wrappers
-- add query-plan and citation-focused retrieval responses
-- add operator-facing export/import commands
+- publish adapter examples for OpenClaw, Codex, and Claude Code (done)
+- add session commit helpers and idempotent write wrappers (done for first-pass examples)
+- next: add query-plan and citation-focused retrieval responses
+- next: add operator-facing export/import commands
 
 ## Phase 3 - make it production-worthy
 
