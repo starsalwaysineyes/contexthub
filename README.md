@@ -120,7 +120,8 @@ GitHub Actions runs the same secret scan and pytest on every push/PR.
 - [x] Persist derivation lineage (`derivation_jobs` + `record_links`)
 - [x] Add first-pass real async derivation execution via persisted jobs
 - [x] Deploy first managed instance bootstrap to target server (`systemd` + health/write/query smoke)
-- [ ] Configure remote provider env and validate successful derive path on server
+- [x] Configure remote provider env and validate successful derive path on server
+- [ ] Import selected local materials to the test server and spot-check mapping quality
 
 ## Repo layout
 
