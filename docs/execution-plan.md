@@ -59,8 +59,9 @@ Current status:
 - remote provider env is now configured on the server
 - async derive success path is validated on server with embeddings + rerank enabled
 - deploy script now force-restarts the service after repo sync so freshly pulled code is actually loaded
-- first pilot import batch is done (`notes/contexthub` with async `l1 -> l0` derivation)
-- next: expand import batches, then harden queued-job recovery after restart
+- first expanded pilot import is done (`notes/contexthub` + `docs/` with async `l1 -> l0` derivation)
+- current pilot tenant snapshot: 28 records, 14 derivation jobs completed, 14 record links, 0 failed jobs
+- next: import archive/daily-memory style material with tighter partition mapping, then harden queued-job recovery after restart
 
 Migration scope should include:
 

@@ -82,11 +82,34 @@ uv run python -m contexthub import-markdown \
   --prompt-preset archive_and_memory
 ```
 
+## Server pilot batches
+
+A repeatable helper exists for the test server:
+
+```bash
+CONTEXT_HUB_TENANT_ID=tenant_xxx \
+./scripts/import-test-server-batch.sh repo-docs
+```
+
+Supported batches:
+
+- `notes-contexthub` -> `/Users/shiuing/Desktop/notes/contexthub`
+- `repo-docs` -> `docs/`
+- `all` -> both batches in order
+
+Current defaults:
+
+- partition: `project-contexthub`
+- target layer: `l1`
+- derive: `l0`
+- derive mode: `async`
+- tags: `contexthub`, `server-import`, batch name
+
 ## Current limitations
 
 - imports only Markdown text
 - no binary attachments yet
-- no async job queue yet
+- async jobs now exist, but restart recovery still needs hardening
 - no per-file resume cursor yet
 
 This is enough to begin structured migration work.

@@ -141,6 +141,7 @@ contexthub/
 scripts/
   check_secrets.py
   deploy-test-server.sh
+  import-test-server-batch.sh
   openclaw-query.sh
   openclaw-commit.sh
   codex-commit.sh
