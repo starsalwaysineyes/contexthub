@@ -26,7 +26,7 @@ Deploy ContextHub to the test host `root@38.55.39.92 -p 2222` with a repeatable 
    - SQLite DB under `/opt/contexthub/var/data/contexthub.db`
    - embeddings disabled
    - rerank disabled
-7. installs the `systemd` unit and starts the service
+7. installs the `systemd` unit and always restarts the service after repo sync so new code is actually loaded
 8. retries `http://127.0.0.1:4040/health` until success (default 20 attempts, 1s interval)
 
 ## Run it

@@ -45,7 +45,8 @@ PY
 fi"
 
 "${SCP[@]}" "$rendered_unit" "$HOST:/etc/systemd/system/$SERVICE_NAME.service"
-"${SSH[@]}" "systemctl daemon-reload && systemctl enable --now '$SERVICE_NAME'"
+# Always restart after sync so the running process picks up the new checkout.
+"${SSH[@]}" "systemctl daemon-reload && systemctl enable '$SERVICE_NAME' >/dev/null 2>&1 && systemctl restart '$SERVICE_NAME'"
 
 for ((attempt = 1; attempt <= HEALTH_RETRIES; attempt++)); do
   if "${SSH[@]}" "curl -fsS http://127.0.0.1:4040/health"; then
