@@ -6,6 +6,7 @@
 
 - make `L0/L1/L2` explicit in the data model
 - finish first-pass auth and partition ACL
+- finalize upload + derivation design for `targetLayer + auto derive`
 - add import jobs for local Markdown memory/archive material
 - keep retrieval explainable and debuggable
 
@@ -64,9 +65,10 @@ Cutover checklist:
 ## Near-term deliverables
 
 1. explicit layer model done
-2. first-pass auth + ACL
-3. import pipeline for local materials
-4. adapter examples
-5. plugin design
-6. server deployment
-7. cutover
+2. upload + derivation design done
+3. first-pass auth + ACL
+4. import pipeline for local materials
+5. adapter examples
+6. plugin design
+7. server deployment
+8. cutover

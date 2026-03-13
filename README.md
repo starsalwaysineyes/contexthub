@@ -82,6 +82,7 @@ GitHub Actions runs the same secret scan and pytest on every push/PR.
 - [x] Add Python CI workflow with uv
 - [x] Add Python-based secrets scan in CI/local
 - [x] Make `L0/L1/L2` explicit in the backend data model
+- [x] Finish upload + derivation design with LiteLLM as the abstraction gateway
 - [ ] Add OpenClaw adapter examples + one-command helper scripts
 - [ ] Add Codex and Claude Code adapter examples
 - [ ] Add first-pass auth and partition ACL enforcement
@@ -109,6 +110,7 @@ docs/
   api.md
   openapi.yaml
   layer-model.md
+  upload-derivation-design.md
   execution-plan.md
   agent-integration.md
   roadmap.md
@@ -122,4 +124,5 @@ legacy/
 - Legacy Node MVP is preserved in `legacy/node-mvp/` for design reference and migration diff.
 - The current implementation keeps API shape close to the original MVP to reduce adapter churn.
 - Layer mapping is documented in `docs/layer-model.md`.
+- Upload and auto-derivation design is documented in `docs/upload-derivation-design.md`.
 - Next-step rollout order is documented in `docs/execution-plan.md`.

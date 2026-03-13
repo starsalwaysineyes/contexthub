@@ -66,8 +66,10 @@ Current representation:
 
 - first-class attachments / binary assets for richer `L2`
 - import pipeline from local Markdown archives and project files
-- automatic L2 -> L1 -> L0 derivation pipeline
+- automatic L2 -> L1 -> L0 derivation pipeline implementation
 - policy rules such as "this agent can read L0/L1 but not L2"
+
+The derivation design is now documented in `docs/upload-derivation-design.md`, but it is not implemented yet.
 
 ## Recommended usage pattern
 
