@@ -59,7 +59,8 @@ Current status:
 - remote provider env is now configured on the server
 - async derive success path is validated on server with embeddings + rerank enabled
 - deploy script now force-restarts the service after repo sync so freshly pulled code is actually loaded
-- next: import selected local materials, then harden queued-job recovery after restart
+- first pilot import batch is done (`notes/contexthub` with async `l1 -> l0` derivation)
+- next: expand import batches, then harden queued-job recovery after restart
 
 Migration scope should include:
 
