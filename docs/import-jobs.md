@@ -106,6 +106,13 @@ CONTEXT_HUB_TENANT_ID=tenant_xxx \
 ./scripts/import-test-server-batch.sh repo-docs
 ```
 
+After running migration batches, use the inspection helper for a compact quality snapshot:
+
+```bash
+CONTEXT_HUB_TENANT_ID=tenant_xxx \
+./scripts/inspect-test-server-migration.sh
+```
+
 Supported batches:
 
 - `notes-contexthub` -> `/Users/shiuing/Desktop/notes/contexthub`
