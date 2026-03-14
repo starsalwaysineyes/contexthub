@@ -981,6 +981,7 @@ def test_app_can_run_async_derivation_job_and_fetch_links(tmp_path: Path, monkey
     monkeypatch.setenv("CONTEXT_HUB_ENABLE_AUTH", "true")
     monkeypatch.setenv("CONTEXT_HUB_ADMIN_TOKEN", "admin-secret")
     monkeypatch.setattr(app_module, "LiteLLMAbstractionClient", lambda config: FakeAbstractor())
+    monkeypatch.setattr(app_module.threading, "Thread", ImmediateThread)
     app = create_app()
     client = TestClient(app)
     admin_headers = {"Authorization": "Bearer admin-secret"}
