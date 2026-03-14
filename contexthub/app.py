@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import BackgroundTasks, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
@@ -46,6 +48,39 @@ def create_app() -> FastAPI:
 
     def get_auth(request: Request) -> AuthContext:
         return security.authenticate_request(request)
+
+    def attach_scope(
+        result: dict[str, Any],
+        *,
+        auth: AuthContext,
+        payload: Any,
+        requested_partitions: list[str],
+        effective_partitions: list[str],
+        partition_layer_rules: dict[str, set[str]] | None,
+    ) -> dict[str, Any]:
+        scope: dict[str, Any] = {
+            "tenantId": payload.tenant_id,
+            "authKind": auth.kind,
+            "authScoped": auth.kind != "admin",
+            "requestedPartitions": requested_partitions,
+            "effectivePartitions": effective_partitions,
+            "requestedTypes": [str(item).strip() for item in getattr(payload, "types", []) if str(item).strip()],
+            "requestedLayers": [str(item).strip() for item in getattr(payload, "layers", []) if str(item).strip()],
+            "requestedTags": [str(item).strip() for item in getattr(payload, "tags", []) if str(item).strip()],
+            "effectiveLayerRules": None
+            if partition_layer_rules is None
+            else {partition: sorted(layers) for partition, layers in sorted(partition_layer_rules.items())},
+        }
+        if hasattr(payload, "source_kind") and getattr(payload, "source_kind", None):
+            scope["sourceKind"] = payload.source_kind
+        if hasattr(payload, "source_path_prefix") and getattr(payload, "source_path_prefix", None):
+            scope["sourcePathPrefix"] = payload.source_path_prefix
+        if hasattr(payload, "path_prefix") and getattr(payload, "path_prefix", None):
+            scope["pathPrefix"] = payload.path_prefix
+        if hasattr(payload, "title_contains") and getattr(payload, "title_contains", None):
+            scope["titleContains"] = payload.title_contains
+        result["scope"] = scope
+        return result
 
     @app.get("/health", response_model=HealthResponse)
     def health() -> dict:
@@ -135,7 +170,15 @@ def create_app() -> FastAPI:
             requested_partitions,
         )
         scoped_payload = payload.model_copy(update={"partitions": scoped_partitions})
-        return service.list_records(scoped_payload, partition_layer_rules=partition_layer_rules)
+        result = service.list_records(scoped_payload, partition_layer_rules=partition_layer_rules)
+        return attach_scope(
+            result,
+            auth=auth,
+            payload=payload,
+            requested_partitions=requested_partitions,
+            effective_partitions=scoped_partitions,
+            partition_layer_rules=partition_layer_rules,
+        )
 
     @app.post("/v1/records/tree")
     def browse_record_tree(payload: BrowseTreeRequest, auth: AuthContext = Depends(get_auth)) -> dict:
@@ -147,7 +190,15 @@ def create_app() -> FastAPI:
             requested_partitions,
         )
         scoped_payload = payload.model_copy(update={"partitions": scoped_partitions})
-        return service.browse_record_tree(scoped_payload, partition_layer_rules=partition_layer_rules)
+        result = service.browse_record_tree(scoped_payload, partition_layer_rules=partition_layer_rules)
+        return attach_scope(
+            result,
+            auth=auth,
+            payload=payload,
+            requested_partitions=requested_partitions,
+            effective_partitions=scoped_partitions,
+            partition_layer_rules=partition_layer_rules,
+        )
 
     @app.post("/v1/records/grep")
     def grep_records(payload: GrepRequest, auth: AuthContext = Depends(get_auth)) -> dict:
@@ -159,7 +210,15 @@ def create_app() -> FastAPI:
             requested_partitions,
         )
         scoped_payload = payload.model_copy(update={"partitions": scoped_partitions})
-        return service.grep_records(scoped_payload, partition_layer_rules=partition_layer_rules)
+        result = service.grep_records(scoped_payload, partition_layer_rules=partition_layer_rules)
+        return attach_scope(
+            result,
+            auth=auth,
+            payload=payload,
+            requested_partitions=requested_partitions,
+            effective_partitions=scoped_partitions,
+            partition_layer_rules=partition_layer_rules,
+        )
 
     @app.post("/v1/resources/import", status_code=201)
     def import_resource(
@@ -199,7 +258,15 @@ def create_app() -> FastAPI:
             requested_partitions,
         )
         scoped_payload = payload.model_copy(update={"partitions": scoped_partitions})
-        return service.query(scoped_payload, partition_layer_rules=partition_layer_rules)
+        result = service.query(scoped_payload, partition_layer_rules=partition_layer_rules)
+        return attach_scope(
+            result,
+            auth=auth,
+            payload=payload,
+            requested_partitions=requested_partitions,
+            effective_partitions=scoped_partitions,
+            partition_layer_rules=partition_layer_rules,
+        )
 
     @app.post("/v1/sessions/commit", status_code=201)
     def commit_session(payload: CommitSessionRequest, auth: AuthContext = Depends(get_auth)) -> dict:

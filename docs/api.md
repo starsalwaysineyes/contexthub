@@ -130,6 +130,7 @@ Notes:
 
 - intended for browse/find/list workflows when the caller does not yet know a `recordId`
 - returns lightweight record summaries with `textPreview`, `lineCount`, and source metadata
+- response now includes a `scope` block so callers can see requested vs effective partitions/layers/tags and any auth-driven layer rules
 - this is the first browse-style API toward a more file-system-like experience
 
 ## `POST /v1/records/tree`
@@ -152,6 +153,7 @@ Notes:
 - returns immediate child nodes under `pathPrefix`
 - each node reports whether it is a `file` or `dir`
 - each node includes aggregated `recordCount`, `layers`, and `partitions`
+- response now includes a `scope` block so callers can inspect effective browse scope without reading raw auth state
 - this is the first step toward a virtual directory tree over ContextHub records
 
 ## `POST /v1/records/grep`
@@ -171,6 +173,7 @@ Body fields:
 Notes:
 
 - returns line-level hits with `lineNumber`, `text`, `matchRanges`, `contextBefore`, and `contextAfter`
+- response now includes a `scope` block so callers can see what was actually searched
 - this is meant to feel closer to `grep` / `rg` than semantic recall
 - current output is line-oriented with small surrounding windows, not yet full file-level navigation
 
@@ -298,6 +301,7 @@ Body fields:
 Notes:
 
 - `tags` is the current lightweight collaboration filter surface for multi-agent recall and shared-memory routing
+- response now includes a `scope` block so callers can inspect requested vs effective partitions/layers/tags and auth-driven layer rules
 
 Auth notes:
 

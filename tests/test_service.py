@@ -598,6 +598,8 @@ def test_app_can_browse_record_tree(tmp_path: Path, monkeypatch) -> None:
     )
     assert tree.status_code == 200
     assert tree.json()["items"][0]["name"] in {"archive"}
+    assert tree.json()["scope"]["effectivePartitions"] == ["memory"]
+    assert tree.json()["scope"]["requestedTags"] == ["archive"]
 
 
 def test_app_can_list_records(tmp_path: Path, monkeypatch) -> None:
@@ -638,6 +640,50 @@ def test_app_can_list_records(tmp_path: Path, monkeypatch) -> None:
     )
     assert listed.status_code == 200
     assert listed.json()["items"][0]["title"] == "Archive summary"
+    assert listed.json()["scope"]["effectivePartitions"] == ["memory"]
+    assert listed.json()["scope"]["titleContains"] == "archive"
+
+
+def test_app_can_query_records_with_scope_metadata(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CONTEXT_HUB_DATABASE_PATH", str(tmp_path / "query-api.db"))
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_EMBEDDINGS", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_RERANK", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_AUTH", "true")
+    monkeypatch.setenv("CONTEXT_HUB_ADMIN_TOKEN", "admin-secret")
+    app = create_app()
+    client = TestClient(app)
+    admin_headers = {"Authorization": "Bearer admin-secret"}
+
+    tenant = client.post("/v1/tenants", headers=admin_headers, json={"slug": "demo-queryapi", "name": "Demo Query API"}).json()
+    client.post(
+        "/v1/partitions",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "key": "memory", "name": "Memory"},
+    ).raise_for_status()
+    client.post(
+        "/v1/records",
+        headers=admin_headers,
+        json={
+            "tenantId": tenant["id"],
+            "partitionKey": "memory",
+            "type": "memory",
+            "layer": "l0",
+            "title": "Codex note",
+            "text": "shared collaboration scope",
+            "tags": ["agent:codex"],
+        },
+    ).raise_for_status()
+
+    queried = client.post(
+        "/v1/query",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "query": "shared collaboration scope", "partitions": ["memory"], "layers": ["l0"], "tags": ["agent:codex"]},
+    )
+    assert queried.status_code == 200
+    assert queried.json()["items"][0]["title"] == "Codex note"
+    assert queried.json()["scope"]["effectivePartitions"] == ["memory"]
+    assert queried.json()["scope"]["requestedLayers"] == ["l0"]
+    assert queried.json()["scope"]["requestedTags"] == ["agent:codex"]
 
 
 def test_app_can_read_lines_and_grep_record_text(tmp_path: Path, monkeypatch) -> None:
@@ -688,6 +734,8 @@ def test_app_can_read_lines_and_grep_record_text(tmp_path: Path, monkeypatch) ->
     assert grep.status_code == 200
     assert grep.json()["items"][0]["lineNumber"] == 2
     assert grep.json()["items"][0]["contextBefore"][0]["lineNumber"] == 1
+    assert grep.json()["scope"]["effectivePartitions"] == ["memory"]
+    assert grep.json()["scope"]["requestedLayers"] == ["l2"]
 
 
 def test_app_can_get_and_update_record(tmp_path: Path, monkeypatch) -> None:
