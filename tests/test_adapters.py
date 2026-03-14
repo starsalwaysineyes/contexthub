@@ -5,6 +5,7 @@ from pathlib import Path
 from contexthub.adapter_helpers import (
     build_commit_payload,
     build_memory_entry,
+    build_openclaw_recall_config,
     build_query_payload,
     parse_csv_list,
     read_optional_text,
@@ -18,8 +19,15 @@ def test_parse_csv_list() -> None:
 
 def test_build_query_payload_defaults() -> None:
     payload = build_query_payload(tenant_id="tenant_x", query="hello")
-    assert payload["layers"] == ["l0", "l1"]
+    assert payload["layers"] == ["l0"]
     assert payload["limit"] == 5
+
+
+def test_build_openclaw_recall_config_defaults() -> None:
+    config = build_openclaw_recall_config()
+    assert config["enabled"] is True
+    assert config["layers"] == ["l0"]
+    assert config["limit"] == 5
 
 
 def test_build_memory_entry() -> None:

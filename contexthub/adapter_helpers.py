@@ -31,7 +31,24 @@ def build_query_payload(
         "tenantId": tenant_id,
         "query": query,
         "partitions": partitions or [],
-        "layers": layers or ["l0", "l1"],
+        "layers": layers or ["l0"],
+        "limit": limit,
+        "rerank": rerank,
+    }
+
+
+def build_openclaw_recall_config(
+    *,
+    enabled: bool = True,
+    partitions: list[str] | None = None,
+    layers: list[str] | None = None,
+    limit: int = 5,
+    rerank: bool = False,
+) -> dict[str, Any]:
+    return {
+        "enabled": enabled,
+        "partitions": partitions or [],
+        "layers": layers or ["l0"],
         "limit": limit,
         "rerank": rerank,
     }

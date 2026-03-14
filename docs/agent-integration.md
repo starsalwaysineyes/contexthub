@@ -50,6 +50,8 @@ That covers:
 ### Read side
 
 - before answering, call `POST /v1/query`
+- keep pre-answer recall as a cfg-controlled feature
+- default pre-answer recall to `L0` only unless config explicitly broadens it
 - scope partitions per channel, task, or project
 - ask for a small result set with citations
 - expose retrieval trace when operators need to inspect why something was recalled

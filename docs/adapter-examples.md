@@ -42,11 +42,25 @@ CONTEXT_HUB_AGENT_ID=agent_xxx
 ./scripts/openclaw-query.sh \
   "latest context backend decision" \
   --partitions project-openclaw,memory \
-  --layers l0,l1 \
+  --layers l0 \
   --limit 5
 ```
 
-This is the shape the future plugin can call before answering.
+This matches the current plugin direction:
+
+- pre-answer recall is a cfg-controlled feature
+- default recall scope is `L0` only
+- partitions / layers / limit / rerank can be overridden by config or env
+
+Shared env knobs for the OpenClaw recall path:
+
+```text
+CONTEXT_HUB_RECALL_ENABLED=true
+CONTEXT_HUB_RECALL_PARTITIONS=project-openclaw,memory
+CONTEXT_HUB_RECALL_LAYERS=l0
+CONTEXT_HUB_RECALL_LIMIT=5
+CONTEXT_HUB_RECALL_RERANK=false
+```
 
 ## OpenClaw commit example
 
