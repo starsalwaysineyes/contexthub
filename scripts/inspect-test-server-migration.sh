@@ -9,7 +9,7 @@ fi
 HOST="${CONTEXT_HUB_DEPLOY_HOST:-root@38.55.39.92}"
 PORT="${CONTEXT_HUB_DEPLOY_PORT:-2222}"
 BASE_URL="${CONTEXT_HUB_INSPECT_BASE_URL:-http://127.0.0.1:4041}"
-PARTITION_KEY="${CONTEXT_HUB_PARTITION_KEY:-project-contexthub}"
+PARTITION_KEY="${CONTEXT_HUB_PARTITION_KEY:-memory}"
 TOKEN="${CONTEXT_HUB_TOKEN:-}"
 
 cleanup() {
@@ -36,7 +36,7 @@ from urllib.request import Request, urlopen
 
 base = os.environ.get("BASE_URL", "http://127.0.0.1:4041").rstrip("/")
 tenant_id = os.environ["CONTEXT_HUB_TENANT_ID"]
-partition_key = os.environ.get("PARTITION_KEY", "project-contexthub")
+partition_key = os.environ.get("PARTITION_KEY", "memory")
 token = os.environ.get("TOKEN", "")
 
 headers = {"Content-Type": "application/json"}
