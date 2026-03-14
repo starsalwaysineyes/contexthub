@@ -492,17 +492,22 @@ class HubService:
         pattern = payload.pattern if payload.regex else re.escape(payload.pattern)
         compiled = re.compile(pattern, flags)
         limit = max(min(payload.limit or 20, 500), 1)
+        before_context = max(min(payload.before_context, 20), 0)
+        after_context = max(min(payload.after_context, 20), 0)
 
         items: list[dict[str, Any]] = []
         matched_records = 0
         for row in filtered_rows:
             record = self._serialize_record(dict(row))
+            record_lines = record["text"].splitlines()
             record_matches = 0
-            for line_number, line_text in enumerate(record["text"].splitlines(), start=1):
+            for line_number, line_text in enumerate(record_lines, start=1):
                 matches = list(compiled.finditer(line_text))
                 if not matches:
                     continue
                 record_matches += 1
+                before_slice = record_lines[max(0, line_number - before_context - 1) : line_number - 1]
+                after_slice = record_lines[line_number : line_number + after_context]
                 items.append(
                     {
                         "recordId": record["id"],
@@ -516,6 +521,20 @@ class HubService:
                         "matchRanges": [
                             {"start": match.start(), "end": match.end()}
                             for match in matches
+                        ],
+                        "contextBefore": [
+                            {
+                                "lineNumber": line_number - len(before_slice) + index,
+                                "text": text,
+                            }
+                            for index, text in enumerate(before_slice)
+                        ],
+                        "contextAfter": [
+                            {
+                                "lineNumber": line_number + index + 1,
+                                "text": text,
+                            }
+                            for index, text in enumerate(after_slice)
                         ],
                     }
                 )

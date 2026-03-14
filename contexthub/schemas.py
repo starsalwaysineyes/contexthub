@@ -95,6 +95,8 @@ class GrepRequest(BaseModel):
     regex: bool = False
     case_sensitive: bool = Field(default=False, alias="caseSensitive")
     limit: int | None = None
+    before_context: int = Field(default=0, alias="beforeContext")
+    after_context: int = Field(default=0, alias="afterContext")
 
 
 class MemoryEntry(BaseModel):

@@ -40,7 +40,7 @@ def create_app() -> FastAPI:
     )
     security = SecurityManager(store, config.auth)
 
-    app = FastAPI(title="ContextHub API", version="0.8.0")
+    app = FastAPI(title="ContextHub API", version="0.9.0")
 
     def get_auth(request: Request) -> AuthContext:
         return security.authenticate_request(request)

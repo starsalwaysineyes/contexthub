@@ -281,6 +281,8 @@ def test_grep_records_returns_line_numbers(tmp_path: Path) -> None:
             partitions=["memory"],
             layers=["l2"],
             limit=10,
+            beforeContext=1,
+            afterContext=1,
         )
     )
 
@@ -289,6 +291,8 @@ def test_grep_records_returns_line_numbers(tmp_path: Path) -> None:
     assert result["items"][0]["lineNumber"] == 2
     assert result["items"][1]["lineNumber"] == 3
     assert result["items"][0]["matchRanges"][0]["start"] == 0
+    assert result["items"][0]["contextBefore"][0]["lineNumber"] == 1
+    assert result["items"][0]["contextAfter"][0]["lineNumber"] == 3
 
 
 def test_update_record_rechunks_and_changes_layer(tmp_path: Path) -> None:
@@ -462,10 +466,18 @@ def test_app_can_read_lines_and_grep_record_text(tmp_path: Path, monkeypatch) ->
     grep = client.post(
         "/v1/records/grep",
         headers=admin_headers,
-        json={"tenantId": tenant["id"], "pattern": "hit", "partitions": ["memory"], "layers": ["l2"]},
+        json={
+            "tenantId": tenant["id"],
+            "pattern": "hit",
+            "partitions": ["memory"],
+            "layers": ["l2"],
+            "beforeContext": 1,
+            "afterContext": 1,
+        },
     )
     assert grep.status_code == 200
     assert grep.json()["items"][0]["lineNumber"] == 2
+    assert grep.json()["items"][0]["contextBefore"][0]["lineNumber"] == 1
 
 
 def test_app_can_get_and_update_record(tmp_path: Path, monkeypatch) -> None:

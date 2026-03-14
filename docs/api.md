@@ -118,12 +118,14 @@ Body fields:
 - `regex`
 - `caseSensitive`
 - `limit`
+- `beforeContext`
+- `afterContext`
 
 Notes:
 
-- returns line-level hits with `lineNumber`, `text`, and `matchRanges`
+- returns line-level hits with `lineNumber`, `text`, `matchRanges`, `contextBefore`, and `contextAfter`
 - this is meant to feel closer to `grep` / `rg` than semantic recall
-- current output is line-oriented, not yet full file-context windows
+- current output is line-oriented with small surrounding windows, not yet full file-level navigation
 
 ## `POST /v1/resources/import`
 
