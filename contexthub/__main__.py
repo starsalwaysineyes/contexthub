@@ -37,6 +37,8 @@ def main() -> None:
     import_markdown.add_argument("--source-kind", default="markdown_file")
     import_markdown.add_argument("--relative-path-prefix", default="")
     import_markdown.add_argument("--metadata-json", default="{}")
+    import_markdown.add_argument("--include", action="append", default=[])
+    import_markdown.add_argument("--exclude", action="append", default=[])
     import_markdown.add_argument("--tag", action="append", default=[])
     import_markdown.add_argument("--dry-run", action="store_true")
 
@@ -71,6 +73,8 @@ def main() -> None:
             source_kind=args.source_kind,
             relative_path_prefix=args.relative_path_prefix or None,
             metadata=json.loads(args.metadata_json),
+            include_globs=tuple(args.include),
+            exclude_globs=tuple(args.exclude),
             dry_run=args.dry_run,
             tags=tuple(args.tag),
         )

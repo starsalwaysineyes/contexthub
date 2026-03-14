@@ -26,6 +26,10 @@ uv run python -m contexthub import-markdown \
 - `--prompt-preset archive_and_memory`
 - `--derive-mode sync|async`
 - `--type resource|summary|memory|note`
+- `--source-kind markdown_file|local_file|...`
+- `--relative-path-prefix archive|memory/daily|...`
+- `--metadata-json '{"migrationPreset":"archive"}'`
+- `--include '2026-*.md' --exclude 'archive/**'`
 - `--tag imported --tag local`
 
 ## Current behavior
@@ -43,15 +47,18 @@ These mappings are migration presets for one local workspace shape. They are not
 
 ### Daily memory files (preset example)
 
-- source: `memory/YYYY-MM-DD.md`
+- source: `memory/YYYY-MM-DD*.md`
 - target layer: `l0`
 - partition suggestion: `memory`
+- suggested filters: `--include '2026-*.md' --exclude 'archive/**' --exclude 'auto-memory/**'`
+- suggested mapping: `--source-kind workspace_memory_file --relative-path-prefix memory/daily`
 
 ### Archive documents (preset example)
 
 - source: `archive/**/*.md`
 - target layer: `l1`
-- partition suggestion: project-specific archive partition
+- partition suggestion: project-specific archive partition or `memory`
+- suggested mapping: `--source-kind workspace_memory_archive_file --relative-path-prefix memory/archive`
 
 ### Raw project notes / transcripts
 
@@ -103,15 +110,19 @@ Supported batches:
 
 - `notes-contexthub` -> `/Users/shiuing/Desktop/notes/contexthub`
 - `repo-docs` -> `docs/`
-- `all` -> both batches in order
+- `workspace-memory-daily` -> `~/.openclaw/workspace/memory` filtered to daily memory files
+- `workspace-memory-archive` -> `~/.openclaw/workspace/memory/archive`
+- `all` -> `notes-contexthub` + `repo-docs`
+- `all-migration` -> `workspace-memory-daily` + `workspace-memory-archive`
 
 Current defaults:
 
-- partition: `project-contexthub`
-- target layer: `l1`
-- derive: `l0`
-- derive mode: `async`
-- tags: `contexthub`, `server-import`, batch name
+- content batches partition: `project-contexthub`
+- migration batches partition: `memory` (override with `CONTEXT_HUB_MEMORY_PARTITION_KEY` if needed)
+- `notes-contexthub` / `repo-docs`: target layer `l1`, derive `l0`, derive mode `async`
+- `workspace-memory-daily`: target layer `l0`, no derive, filtered via include/exclude globs
+- `workspace-memory-archive`: target layer `l1`, derive `l0`, derive mode `async`
+- tags: `contexthub`, `server-import`, batch name, plus migration-specific tags when applicable
 
 ## Current limitations
 

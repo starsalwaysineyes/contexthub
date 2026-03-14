@@ -55,6 +55,8 @@ uv run python -m contexthub import-markdown \
   --source-kind markdown_file \
   --relative-path-prefix archive \
   --metadata-json '{"migrationPreset":"archive"}' \
+  --include '**/*.md' \
+  --exclude 'drafts/**' \
   --dry-run
 ```
 

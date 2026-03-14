@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
 
 from contexthub.client import ContextHubClient
@@ -28,6 +28,8 @@ class ImportMarkdownOptions:
     source_kind: str = "markdown_file"
     relative_path_prefix: str | None = None
     metadata: dict[str, object] | None = None
+    include_globs: tuple[str, ...] = ()
+    exclude_globs: tuple[str, ...] = ()
     dry_run: bool = False
     tags: tuple[str, ...] = ()
 
@@ -44,8 +46,33 @@ def make_file_idempotency_key(relative_path: str, layer: str) -> str:
     return f"file-import:{layer}:{digest}"
 
 
-def discover_markdown_files(root: Path) -> list[Path]:
-    return sorted(path for path in root.rglob("*.md") if path.is_file())
+def matches_any_glob(relative_path: str, patterns: Sequence[str]) -> bool:
+    path = PurePosixPath(relative_path)
+    for pattern in patterns:
+        normalized = pattern.strip()
+        if not normalized:
+            continue
+        if path.match(normalized):
+            return True
+        if normalized.endswith('/**'):
+            prefix = normalized[:-3].rstrip('/')
+            if relative_path == prefix or relative_path.startswith(f"{prefix}/"):
+                return True
+    return False
+
+
+def discover_markdown_files(root: Path, *, include_globs: Sequence[str] = (), exclude_globs: Sequence[str] = ()) -> list[Path]:
+    discovered = []
+    for path in root.rglob("*.md"):
+        if not path.is_file():
+            continue
+        relative_path = path.relative_to(root).as_posix()
+        if include_globs and not matches_any_glob(relative_path, include_globs):
+            continue
+        if exclude_globs and matches_any_glob(relative_path, exclude_globs):
+            continue
+        discovered.append(path)
+    return sorted(discovered)
 
 
 def build_effective_relative_path(relative_path: str, prefix: str | None) -> str:
@@ -101,7 +128,11 @@ def import_markdown_tree(
     client: ContextHubClient | None = None,
 ) -> dict:
     resolved_root = options.root.expanduser().resolve()
-    files = discover_markdown_files(resolved_root)
+    files = discover_markdown_files(
+        resolved_root,
+        include_globs=options.include_globs,
+        exclude_globs=options.exclude_globs,
+    )
     if options.file_limit is not None:
         files = files[: options.file_limit]
 

@@ -6,9 +6,11 @@ from contexthub.importer import (
     ImportMarkdownOptions,
     build_effective_relative_path,
     build_import_payload,
+    discover_markdown_files,
     extract_markdown_title,
     import_markdown_tree,
     make_file_idempotency_key,
+    matches_any_glob,
 )
 
 
@@ -40,6 +42,20 @@ def test_build_effective_relative_path_applies_prefix() -> None:
     assert build_effective_relative_path("daily/2026-03-14.md", "memory") == "memory/daily/2026-03-14.md"
 
 
+def test_discover_markdown_files_supports_include_exclude_globs(tmp_path: Path) -> None:
+    root = tmp_path / "memory"
+    (root / "archive" / "2026").mkdir(parents=True)
+    (root / "auto-memory").mkdir(parents=True)
+    (root / "2026-03-14.md").write_text("daily", encoding="utf-8")
+    (root / "archive" / "2026" / "case.md").write_text("archive", encoding="utf-8")
+    (root / "auto-memory" / "README.md").write_text("auto", encoding="utf-8")
+
+    files = discover_markdown_files(root, include_globs=("2026-*.md",), exclude_globs=("archive/**", "auto-memory/**"))
+
+    assert [path.relative_to(root).as_posix() for path in files] == ["2026-03-14.md"]
+    assert matches_any_glob("archive/2026/case.md", ("archive/**",)) is True
+
+
 def test_import_markdown_tree_builds_expected_payload(tmp_path: Path) -> None:
     root = tmp_path / "notes"
     root.mkdir()
@@ -59,6 +75,8 @@ def test_import_markdown_tree_builds_expected_payload(tmp_path: Path) -> None:
         source_kind="local_file",
         relative_path_prefix="migration/archive",
         metadata={"preset": "archive"},
+        include_globs=("*.md",),
+        exclude_globs=("ignore/**",),
         tags=("imported",),
     )
     client = RecordingClient()
