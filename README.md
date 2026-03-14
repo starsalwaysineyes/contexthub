@@ -69,6 +69,7 @@ Default endpoints:
 - `PATCH /v1/records/{recordId}`
 - `GET /v1/records/{recordId}/lines`
 - `POST /v1/records/list`
+- `POST /v1/records/tree`
 - `POST /v1/records/grep`
 - `POST /v1/resources/import`
 - `GET /v1/derivation-jobs/{jobId}`
@@ -130,6 +131,7 @@ GitHub Actions runs the same secret scan and pytest on every push/PR.
 - [x] Add first-pass line-based read/grep APIs (`GET /v1/records/{recordId}/lines`, `POST /v1/records/grep`)
 - [x] Add grep context windows (`beforeContext`, `afterContext`) for line-oriented retrieval
 - [x] Add first-pass record listing/browsing API (`POST /v1/records/list`)
+- [x] Add first-pass tree/path browse API (`POST /v1/records/tree`)
 - [ ] Add generic file/session-oriented upload, get, and update semantics for explicit `L0` / `L1` / `L2` targeting
 - [ ] Strengthen retrieval into a more file-system-like experience: cross-file hits, explicit cross-partition search, and multi-hit results for agent workflows
 - [ ] Record a future `queryTask` / agentic-search workflow where the service can perform retrieval + extraction for the caller (idea only, not in current scope)

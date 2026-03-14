@@ -130,6 +130,27 @@ Notes:
 - returns lightweight record summaries with `textPreview`, `lineCount`, and source metadata
 - this is the first browse-style API toward a more file-system-like experience
 
+## `POST /v1/records/tree`
+
+Browse one path level at a time using `source.relativePath` / `source.path`.
+
+Body fields:
+
+- `tenantId`
+- `partitions`
+- `types`
+- `layers`
+- `sourceKind`
+- `pathPrefix`
+- `limit`
+
+Notes:
+
+- returns immediate child nodes under `pathPrefix`
+- each node reports whether it is a `file` or `dir`
+- each node includes aggregated `recordCount`, `layers`, and `partitions`
+- this is the first step toward a virtual directory tree over ContextHub records
+
 ## `POST /v1/records/grep`
 
 Search record text line-by-line and return line numbers.

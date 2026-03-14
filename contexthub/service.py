@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import posixpath
 import re
 import secrets
 import uuid
@@ -10,6 +11,7 @@ from typing import Any, Callable
 from contexthub.config import AppConfig
 from contexthub.providers import EmbeddingClient, LiteLLMAbstractionClient, RerankClient
 from contexthub.schemas import (
+    BrowseTreeRequest,
     CommitSessionRequest,
     CreatePartitionRequest,
     CreatePrincipalRequest,
@@ -540,6 +542,74 @@ class HubService:
                 "returned": len(items),
                 "totalMatched": len(filtered),
                 "hasMore": offset + len(items) < len(filtered),
+            },
+        }
+
+    def browse_record_tree(
+        self,
+        payload: BrowseTreeRequest,
+        *,
+        partition_layer_rules: dict[str, set[str]] | None = None,
+    ) -> dict[str, Any]:
+        listed = self.list_records(
+            ListRecordsRequest(
+                tenantId=payload.tenant_id,
+                partitions=payload.partitions,
+                types=payload.types,
+                layers=payload.layers,
+                sourceKind=payload.source_kind,
+                sourcePathPrefix=payload.path_prefix,
+                offset=0,
+                limit=100000,
+            ),
+            partition_layer_rules=partition_layer_rules,
+        )
+        prefix = (payload.path_prefix or "").strip().strip("/")
+        nodes: dict[str, dict[str, Any]] = {}
+        for item in listed["items"]:
+            source = item.get("source") if isinstance(item.get("source"), dict) else {}
+            candidate_path = str(source.get("relativePath") or source.get("path") or "").replace("\\", "/").strip("/")
+            if not candidate_path:
+                continue
+            relative = candidate_path
+            if prefix:
+                if candidate_path == prefix:
+                    relative = ""
+                elif candidate_path.startswith(prefix + "/"):
+                    relative = candidate_path[len(prefix) + 1 :]
+                else:
+                    continue
+            if not relative:
+                continue
+            head = relative.split("/", 1)[0]
+            is_dir = "/" in relative
+            node_path = posixpath.join(prefix, head) if prefix else head
+            node = nodes.setdefault(
+                node_path,
+                {
+                    "name": head,
+                    "path": node_path,
+                    "kind": "dir" if is_dir else "file",
+                    "recordCount": 0,
+                    "layers": {},
+                    "partitions": {},
+                },
+            )
+            if is_dir:
+                node["kind"] = "dir"
+            node["recordCount"] += 1
+            node["layers"][item["layer"]] = node["layers"].get(item["layer"], 0) + 1
+            node["partitions"][item["partitionKey"]] = node["partitions"].get(item["partitionKey"], 0) + 1
+
+        limit = max(min(payload.limit, 500), 1)
+        items = sorted(nodes.values(), key=lambda item: (item["kind"], item["name"]))[:limit]
+        return {
+            "pathPrefix": prefix,
+            "items": items,
+            "summary": {
+                "nodeCount": len(items),
+                "totalMatchedRecords": listed["page"]["totalMatched"],
+                "limited": len(nodes) > limit,
             },
         }
 

@@ -12,6 +12,7 @@ from contexthub.schemas import (
     CreatePartitionRequest,
     CreateRecordRequest,
     CreateTenantRequest,
+    BrowseTreeRequest,
     GrepRequest,
     ImportResourceRequest,
     ListRecordsRequest,
@@ -260,6 +261,35 @@ def test_read_record_lines_returns_numbered_slice(tmp_path: Path) -> None:
     assert page["items"][1]["text"] == "line 3"
 
 
+def test_browse_record_tree_groups_immediate_children(tmp_path: Path) -> None:
+    service = build_service(tmp_path)
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo-tree", name="Demo Tree"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+
+    for relative_path in ["archive/doc1.md", "archive/doc2.md", "memory/today.md", "TASK.md"]:
+        service.create_record(
+            CreateRecordRequest(
+                tenantId=tenant["id"],
+                partitionKey="memory",
+                type="resource",
+                layer="l1",
+                title=relative_path,
+                text="x",
+                source={"kind": "markdown_file", "relativePath": relative_path},
+            )
+        )
+
+    root = service.browse_record_tree(BrowseTreeRequest(tenantId=tenant["id"], partitions=["memory"]))
+    names = {item["name"] for item in root["items"]}
+    assert names == {"TASK.md", "archive", "memory"}
+
+    archive = service.browse_record_tree(
+        BrowseTreeRequest(tenantId=tenant["id"], partitions=["memory"], pathPrefix="archive")
+    )
+    archive_names = {item["name"] for item in archive["items"]}
+    assert archive_names == {"doc1.md", "doc2.md"}
+
+
 def test_list_records_filters_by_title_tag_and_source_path(tmp_path: Path) -> None:
     service = build_service(tmp_path)
     tenant = service.create_tenant(CreateTenantRequest(slug="demo-list", name="Demo List"))
@@ -474,6 +504,45 @@ def test_import_resource_accepts_string_importance_from_derive(tmp_path: Path) -
     by_layer = {record["layer"]: record for record in result["derivation"]["records"]}
     assert by_layer["l1"]["importance"] == 3.0
     assert by_layer["l0"]["importance"] == 4.0
+
+
+def test_app_can_browse_record_tree(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CONTEXT_HUB_DATABASE_PATH", str(tmp_path / "tree-api.db"))
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_EMBEDDINGS", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_RERANK", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_AUTH", "true")
+    monkeypatch.setenv("CONTEXT_HUB_ADMIN_TOKEN", "admin-secret")
+    app = create_app()
+    client = TestClient(app)
+    admin_headers = {"Authorization": "Bearer admin-secret"}
+
+    tenant = client.post("/v1/tenants", headers=admin_headers, json={"slug": "demo-treeapi", "name": "Demo Tree API"}).json()
+    client.post(
+        "/v1/partitions",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "key": "memory", "name": "Memory"},
+    ).raise_for_status()
+    client.post(
+        "/v1/records",
+        headers=admin_headers,
+        json={
+            "tenantId": tenant["id"],
+            "partitionKey": "memory",
+            "type": "resource",
+            "layer": "l1",
+            "title": "Archive summary",
+            "text": "archive text",
+            "source": {"kind": "markdown_file", "relativePath": "archive/doc.md"},
+        },
+    ).raise_for_status()
+
+    tree = client.post(
+        "/v1/records/tree",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "partitions": ["memory"]},
+    )
+    assert tree.status_code == 200
+    assert tree.json()["items"][0]["name"] in {"archive"}
 
 
 def test_app_can_list_records(tmp_path: Path, monkeypatch) -> None:

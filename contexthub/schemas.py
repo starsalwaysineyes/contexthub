@@ -112,6 +112,16 @@ class ListRecordsRequest(BaseModel):
     limit: int = 50
 
 
+class BrowseTreeRequest(BaseModel):
+    tenant_id: str = Field(alias="tenantId")
+    partitions: list[str] = Field(default_factory=list)
+    types: list[str] = Field(default_factory=list)
+    layers: list[RecordLayer] = Field(default_factory=list)
+    source_kind: str | None = Field(default=None, alias="sourceKind")
+    path_prefix: str | None = Field(default=None, alias="pathPrefix")
+    limit: int = 200
+
+
 class MemoryEntry(BaseModel):
     type: str = "memory"
     layer: RecordLayer = "l0"

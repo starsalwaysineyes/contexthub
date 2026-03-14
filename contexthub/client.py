@@ -47,6 +47,9 @@ class ContextHubClient:
     def list_records(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/records/list", payload)
 
+    def browse_record_tree(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/records/tree", payload)
+
     def grep_records(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/records/grep", payload)
 

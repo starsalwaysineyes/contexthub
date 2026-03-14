@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ContextHub API
-  version: 0.10.0
+  version: 0.12.0
   description: Agent-native context backend API.
 servers:
   - url: http://127.0.0.1:4040
@@ -269,6 +269,31 @@ components:
           type: string
         offset:
           type: integer
+        limit:
+          type: integer
+
+    BrowseTreeRequest:
+      type: object
+      required: [tenantId]
+      properties:
+        tenantId:
+          type: string
+        partitions:
+          type: array
+          items:
+            type: string
+        types:
+          type: array
+          items:
+            type: string
+        layers:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecordLayer"
+        sourceKind:
+          type: string
+        pathPrefix:
+          type: string
         limit:
           type: integer
 
@@ -710,6 +735,21 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/ListRecordsRequest"
+      responses:
+        "200":
+          description: OK
+
+  /v1/records/tree:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Browse one source-path tree level
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrowseTreeRequest"
       responses:
         "200":
           description: OK
