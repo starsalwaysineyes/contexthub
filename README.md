@@ -65,6 +65,8 @@ Default endpoints:
 - `POST /v1/principals`
 - `POST /v1/principals/{principalId}/acl`
 - `POST /v1/records`
+- `GET /v1/records/{recordId}`
+- `PATCH /v1/records/{recordId}`
 - `POST /v1/resources/import`
 - `GET /v1/derivation-jobs/{jobId}`
 - `GET /v1/records/{recordId}/links`
@@ -121,6 +123,7 @@ GitHub Actions runs the same secret scan and pytest on every push/PR.
 - [x] Add first-pass real async derivation execution via persisted jobs
 - [x] Deploy first managed instance bootstrap to target server (`systemd` + health/write/query smoke)
 - [x] Configure remote provider env and validate successful derive path on server
+- [x] Add basic record get/update APIs (`GET/PATCH /v1/records/{recordId}`)
 - [ ] Add generic file/session-oriented upload, get, and update semantics for explicit `L0` / `L1` / `L2` targeting
 - [ ] Strengthen retrieval into a more file-system-like experience: cross-file hits, explicit cross-partition search, and multi-hit results for agent workflows
 - [ ] Record a future `queryTask` / agentic-search workflow where the service can perform retrieval + extraction for the caller (idea only, not in current scope)

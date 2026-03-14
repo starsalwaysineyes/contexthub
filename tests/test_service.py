@@ -15,6 +15,7 @@ from contexthub.schemas import (
     ImportResourceRequest,
     QueryRequest,
     RegisterAgentRequest,
+    UpdateRecordRequest,
 )
 from contexthub.service import HubService
 from contexthub.store import SQLiteStore
@@ -233,6 +234,53 @@ def test_query_can_filter_by_layer(tmp_path: Path) -> None:
     assert result["items"][0]["title"] == "Raw transcript"
 
 
+def test_update_record_rechunks_and_changes_layer(tmp_path: Path) -> None:
+    service = build_service(tmp_path)
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo-update", name="Demo Update"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+
+    record = service.create_record(
+        CreateRecordRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="memory",
+            layer="l0",
+            title="Daily note",
+            text="short pointer only",
+        )
+    )
+
+    updated = service.update_record(
+        record["id"],
+        UpdateRecordRequest(
+            layer="l1",
+            title="Daily note expanded",
+            text="expanded archive summary with richer agent memory details",
+            manualSummary="expanded summary",
+            importance=4,
+            pinned=True,
+            tags=["updated", "archive"],
+        ),
+    )
+
+    assert updated["layer"] == "l1"
+    assert updated["title"] == "Daily note expanded"
+    assert updated["manualSummary"] == "expanded summary"
+    assert updated["importance"] == 4.0
+    assert updated["pinned"] is True
+
+    result = service.query(
+        QueryRequest(
+            tenantId=tenant["id"],
+            query="archive summary richer agent memory",
+            partitions=["memory"],
+            layers=["l1"],
+        )
+    )
+    assert len(result["items"]) == 1
+    assert result["items"][0]["recordId"] == record["id"]
+
+
 def test_import_resource_can_derive_l1_and_l0(tmp_path: Path) -> None:
     service = build_service(tmp_path)
     tenant = service.create_tenant(CreateTenantRequest(slug="demo", name="Demo"))
@@ -319,6 +367,49 @@ def test_import_resource_accepts_string_importance_from_derive(tmp_path: Path) -
     by_layer = {record["layer"]: record for record in result["derivation"]["records"]}
     assert by_layer["l1"]["importance"] == 3.0
     assert by_layer["l0"]["importance"] == 4.0
+
+
+def test_app_can_get_and_update_record(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CONTEXT_HUB_DATABASE_PATH", str(tmp_path / "record-api.db"))
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_EMBEDDINGS", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_RERANK", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_AUTH", "true")
+    monkeypatch.setenv("CONTEXT_HUB_ADMIN_TOKEN", "admin-secret")
+    app = create_app()
+    client = TestClient(app)
+    admin_headers = {"Authorization": "Bearer admin-secret"}
+
+    tenant = client.post("/v1/tenants", headers=admin_headers, json={"slug": "demo-record", "name": "Demo Record"}).json()
+    client.post(
+        "/v1/partitions",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "key": "memory", "name": "Memory"},
+    ).raise_for_status()
+    created = client.post(
+        "/v1/records",
+        headers=admin_headers,
+        json={
+            "tenantId": tenant["id"],
+            "partitionKey": "memory",
+            "type": "memory",
+            "layer": "l0",
+            "title": "Original",
+            "text": "original raw text",
+        },
+    ).json()
+
+    fetched = client.get(f"/v1/records/{created['id']}", headers=admin_headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["title"] == "Original"
+
+    patched = client.patch(
+        f"/v1/records/{created['id']}",
+        headers=admin_headers,
+        json={"title": "Updated", "text": "updated raw text", "layer": "l1"},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["title"] == "Updated"
+    assert patched.json()["layer"] == "l1"
 
 
 def test_app_can_run_async_derivation_job_and_fetch_links(tmp_path: Path, monkeypatch) -> None:

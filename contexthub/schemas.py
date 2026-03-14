@@ -63,6 +63,19 @@ class CreateRecordRequest(BaseModel):
     idempotency_key: str | None = Field(default=None, alias="idempotencyKey")
 
 
+class UpdateRecordRequest(BaseModel):
+    type: str | None = None
+    layer: RecordLayer | None = None
+    title: str | None = None
+    text: str | None = None
+    source: dict[str, Any] | None = None
+    tags: list[str] | None = None
+    metadata: dict[str, Any] | None = None
+    manual_summary: str | None = Field(default=None, alias="manualSummary")
+    importance: float | None = None
+    pinned: bool | None = None
+
+
 class QueryRequest(BaseModel):
     tenant_id: str = Field(alias="tenantId")
     query: str

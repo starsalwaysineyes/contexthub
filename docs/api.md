@@ -62,6 +62,37 @@ Notes:
 - `idempotencyKey` is the simplest way to avoid duplicate writes from multiple agents
 - when auth is enabled, caller must have `canWrite=true` on the target partition
 
+## `GET /v1/records/{recordId}`
+
+Fetch one record directly.
+
+Notes:
+
+- useful when callers want file-like open/get behavior instead of search-only access
+- when auth is enabled, caller must have `canRead=true` on the record partition
+
+## `PATCH /v1/records/{recordId}`
+
+Update one record in place.
+
+Current patch scope:
+
+- `type`
+- `layer`
+- `title`
+- `text`
+- `source`
+- `tags`
+- `metadata`
+- `manualSummary`
+- `importance`
+- `pinned`
+
+Notes:
+
+- if `text` changes, chunks are rebuilt and embeddings are recalculated when available
+- partition/tenant reassignment is intentionally not part of this first patch API
+
 ## `POST /v1/resources/import`
 
 Import a resource into a target layer and optionally derive abstraction layers.

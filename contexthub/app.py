@@ -16,6 +16,7 @@ from contexthub.schemas import (
     ImportResourceRequest,
     QueryRequest,
     RegisterAgentRequest,
+    UpdateRecordRequest,
     UpsertPrincipalAclRequest,
 )
 from contexthub.security import AuthContext, SecurityManager
@@ -38,7 +39,7 @@ def create_app() -> FastAPI:
     )
     security = SecurityManager(store, config.auth)
 
-    app = FastAPI(title="ContextHub API", version="0.6.0")
+    app = FastAPI(title="ContextHub API", version="0.7.0")
 
     def get_auth(request: Request) -> AuthContext:
         return security.authenticate_request(request)
@@ -97,6 +98,18 @@ def create_app() -> FastAPI:
     def create_record(payload: CreateRecordRequest, auth: AuthContext = Depends(get_auth)) -> dict:
         security.ensure_partition_write(auth, payload.tenant_id, payload.partition_key)
         return service.create_record(payload)
+
+    @app.get("/v1/records/{record_id}")
+    def get_record(record_id: str, auth: AuthContext = Depends(get_auth)) -> dict:
+        record = service.get_record(record_id)
+        security.ensure_partition_read(auth, record["tenantId"], record["partitionKey"])
+        return record
+
+    @app.patch("/v1/records/{record_id}")
+    def update_record(record_id: str, payload: UpdateRecordRequest, auth: AuthContext = Depends(get_auth)) -> dict:
+        record = service.get_record(record_id)
+        security.ensure_partition_write(auth, record["tenantId"], record["partitionKey"])
+        return service.update_record(record_id, payload)
 
     @app.post("/v1/resources/import", status_code=201)
     def import_resource(

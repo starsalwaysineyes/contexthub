@@ -17,6 +17,7 @@ from contexthub.schemas import (
     ImportResourceRequest,
     QueryRequest,
     RegisterAgentRequest,
+    UpdateRecordRequest,
     UpsertPrincipalAclRequest,
 )
 from contexthub.store import SQLiteStore, from_json, to_json
@@ -314,6 +315,93 @@ class HubService:
         if row is None:
             raise HubError(f"Unknown record: {record_id}")
         return self._serialize_record(dict(row))
+
+    def update_record(self, record_id: str, payload: UpdateRecordRequest) -> dict[str, Any]:
+        updated_fields = set(payload.model_fields_set)
+        if not updated_fields:
+            return self.get_record(record_id)
+
+        timestamp = now_iso()
+        with self.store.connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM records WHERE id = ?",
+                (record_id,),
+            ).fetchone()
+            if row is None:
+                raise HubError(f"Unknown record: {record_id}")
+            record = dict(row)
+            self._assert_tenant(conn, record["tenant_id"])
+            self._assert_partition(conn, record["tenant_id"], record["partition_key"])
+
+            if "type" in updated_fields and payload.type is not None:
+                record["type"] = normalize_key(payload.type)
+            if "layer" in updated_fields and payload.layer is not None:
+                record["layer"] = normalize_key(payload.layer)
+            if "title" in updated_fields and payload.title is not None:
+                record["title"] = payload.title.strip()
+            if "text" in updated_fields and payload.text is not None:
+                record["text"] = payload.text.strip()
+            if "source" in updated_fields:
+                record["source"] = to_json(payload.source) if payload.source is not None else None
+            if "tags" in updated_fields and payload.tags is not None:
+                record["tags"] = to_json([item.strip() for item in payload.tags if item.strip()])
+            if "metadata" in updated_fields and payload.metadata is not None:
+                record["metadata"] = to_json(payload.metadata)
+            if "manual_summary" in updated_fields and payload.manual_summary is not None:
+                record["manual_summary"] = payload.manual_summary.strip()
+            if "importance" in updated_fields and payload.importance is not None:
+                record["importance"] = clamp(float(payload.importance), 0.0, 5.0)
+            if "pinned" in updated_fields and payload.pinned is not None:
+                record["pinned"] = int(payload.pinned)
+            record["updated_at"] = timestamp
+
+            conn.execute(
+                """
+                UPDATE records
+                SET type = ?, layer = ?, title = ?, text = ?, source = ?, tags = ?, metadata = ?,
+                    manual_summary = ?, importance = ?, pinned = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    record["type"],
+                    record["layer"],
+                    record["title"],
+                    record["text"],
+                    record.get("source"),
+                    record["tags"],
+                    record["metadata"],
+                    record["manual_summary"],
+                    record["importance"],
+                    record["pinned"],
+                    record["updated_at"],
+                    record_id,
+                ),
+            )
+
+            if "text" in updated_fields and payload.text is not None:
+                chunks = split_into_chunks(record["text"])
+                embeddings = self._safe_embed(chunks)
+                conn.execute("DELETE FROM chunks WHERE record_id = ?", (record_id,))
+                for index, chunk_text in enumerate(chunks):
+                    vector = embeddings[index] if embeddings and index < len(embeddings) else None
+                    conn.execute(
+                        """
+                        INSERT INTO chunks (id, record_id, tenant_id, partition_key, chunk_index, text, vector, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            create_id("chunk"),
+                            record_id,
+                            record["tenant_id"],
+                            record["partition_key"],
+                            index,
+                            chunk_text,
+                            to_json(vector) if vector is not None else None,
+                            timestamp,
+                        ),
+                    )
+
+        return self._serialize_record(record)
 
     def get_derivation_job(self, job_id: str) -> dict[str, Any]:
         with self.store.connection() as conn:

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ContextHub API
-  version: 0.6.0
+  version: 0.7.0
   description: Agent-native context backend API.
 servers:
   - url: http://127.0.0.1:4040
@@ -122,6 +122,52 @@ components:
           items:
             $ref: "#/components/schemas/RecordLayer"
 
+    Record:
+      type: object
+      additionalProperties: true
+      required: [id, tenantId, partitionKey, type, layer, title, text, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        partitionKey:
+          type: string
+        type:
+          type: string
+        layer:
+          $ref: "#/components/schemas/RecordLayer"
+        title:
+          type: string
+        text:
+          type: string
+        source:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: "null"
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        manualSummary:
+          type: string
+        importance:
+          type: number
+        pinned:
+          type: boolean
+        idempotencyKey:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
     CreateRecordRequest:
       type: object
       required: [tenantId, partitionKey, type, title, text]
@@ -160,6 +206,38 @@ components:
           type: boolean
         idempotencyKey:
           type: string
+
+    UpdateRecordRequest:
+      type: object
+      properties:
+        type:
+          type: string
+        layer:
+          $ref: "#/components/schemas/RecordLayer"
+        title:
+          type: string
+        text:
+          type: string
+        manualSummary:
+          type: string
+        source:
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: "null"
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        importance:
+          type: number
+          minimum: 0
+          maximum: 5
+        pinned:
+          type: boolean
 
     ImportContent:
       type: object
@@ -487,6 +565,48 @@ paths:
       responses:
         "201":
           description: Created
+
+  /v1/records/{recordId}:
+    get:
+      security:
+        - bearerAuth: []
+      summary: Fetch one record
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Record"
+    patch:
+      security:
+        - bearerAuth: []
+      summary: Update one record in place
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRecordRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Record"
 
   /v1/resources/import:
     post:

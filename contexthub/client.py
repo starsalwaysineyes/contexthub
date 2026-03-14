@@ -35,6 +35,12 @@ class ContextHubClient:
     def create_record(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/records", payload)
 
+    def get_record(self, record_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/v1/records/{record_id}")
+
+    def update_record(self, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("PATCH", f"/v1/records/{record_id}", payload)
+
     def import_resource(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/resources/import", payload)
 
