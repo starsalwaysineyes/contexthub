@@ -4,6 +4,7 @@ import hashlib
 import posixpath
 import re
 import secrets
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -1165,8 +1166,10 @@ class HubService:
         effective_mode = row.get("effective_mode") or "sync"
         attempts = max(1, max_attempts)
         last_error = None
+        attempted = 0
 
         for attempt in range(1, attempts + 1):
+            attempted = attempt
             self._update_derivation_job(
                 job_id,
                 status="running",
@@ -1205,13 +1208,35 @@ class HubService:
                 )
             except Exception as error:
                 last_error = str(error)
+                if attempt >= attempts:
+                    break
+                if not self._is_retryable_derivation_error(last_error):
+                    break
+
+                retry_delay_seconds = self._derivation_retry_delay_seconds(attempt, last_error)
+                self._update_derivation_job(
+                    job_id,
+                    status="queued",
+                    effective_mode=effective_mode,
+                    error_message=last_error,
+                    metadata={
+                        "attemptCount": attempt,
+                        "retryableError": True,
+                        "nextRetryDelaySeconds": retry_delay_seconds,
+                    },
+                    finished_at=None,
+                )
+                time.sleep(retry_delay_seconds)
 
         return self._update_derivation_job(
             job_id,
             status="failed",
             effective_mode=effective_mode,
             error_message=last_error,
-            metadata={"attemptCount": attempts},
+            metadata={
+                "attemptCount": attempted,
+                "retryableError": self._is_retryable_derivation_error(last_error or ""),
+            },
             finished_at=now_iso(),
         )
 
@@ -1363,6 +1388,26 @@ class HubService:
                 (job_id,),
             ).fetchone()
         return self._serialize_derivation_job(dict(updated))
+
+    def _is_retryable_derivation_error(self, message: str) -> bool:
+        normalized = message.lower()
+        retry_tokens = [
+            "429 too many requests",
+            "rate limit",
+            "timed out",
+            "timeout",
+            "temporarily unavailable",
+            "service unavailable",
+            "connection reset",
+            "connection refused",
+        ]
+        return any(token in normalized for token in retry_tokens)
+
+    def _derivation_retry_delay_seconds(self, attempt: int, message: str) -> float:
+        match = re.search(r"retry-after[^0-9]*(\\d+)", message, flags=re.IGNORECASE)
+        if match:
+            return float(max(1, int(match.group(1))))
+        return min(20.0, float(2 ** (attempt - 1)))
 
     def _create_record_link(
         self,

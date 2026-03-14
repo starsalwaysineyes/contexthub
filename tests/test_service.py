@@ -96,6 +96,25 @@ class StringImportanceAbstractor(FakeAbstractor):
         return payload
 
 
+class Flaky429Abstractor(FakeAbstractor):
+    def __init__(self, failures_before_success: int = 2) -> None:
+        self.failures_before_success = failures_before_success
+        self.calls = 0
+
+    def derive(self, *, title, text, source_layer, emit_layers, prompt_preset, model=None):
+        self.calls += 1
+        if self.calls <= self.failures_before_success:
+            raise RuntimeError("Client error '429 Too Many Requests' for url 'https://cloud.infini-ai.com/maas/v1/chat/completions' Retry-After: 1")
+        return super().derive(
+            title=title,
+            text=text,
+            source_layer=source_layer,
+            emit_layers=emit_layers,
+            prompt_preset=prompt_preset,
+            model=model,
+        )
+
+
 def build_service(tmp_path: Path, abstractor=None) -> HubService:
     database_path = tmp_path / "contexthub.db"
     store = SQLiteStore(database_path)
@@ -576,6 +595,40 @@ def test_record_idempotency_is_partition_scoped(tmp_path: Path) -> None:
     assert replay_same_partition["id"] == first["id"]
     assert second_partition["id"] != first["id"]
     assert second_partition["partitionKey"] == "memory"
+
+
+def test_run_derivation_job_retries_retryable_errors(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("contexthub.service.time.sleep", lambda _: None)
+    abstractor = Flaky429Abstractor(failures_before_success=2)
+    service = build_service(tmp_path, abstractor=abstractor)
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo-retry", name="Demo Retry"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+
+    result = service.import_resource(
+        ImportResourceRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="resource",
+            targetLayer="l2",
+            title="Retry test",
+            content={"kind": "inline_text", "text": "retryable derive"},
+            derive={
+                "enabled": True,
+                "mode": "async",
+                "emitLayers": ["l1", "l0"],
+                "provider": "litellm",
+                "promptPreset": "archive_and_memory",
+            },
+        ),
+        schedule_async=lambda _: None,
+    )
+
+    job = service.run_derivation_job(result["derivation"]["job"]["id"], max_attempts=3)
+
+    assert job["status"] == "completed"
+    assert job["metadata"]["attemptCount"] == 3
+    assert len(job["metadata"]["derivedRecordIds"]) == 2
+    assert abstractor.calls == 3
 
 
 def test_import_resource_accepts_string_importance_from_derive(tmp_path: Path) -> None:
