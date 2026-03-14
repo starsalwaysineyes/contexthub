@@ -284,6 +284,21 @@ Notes:
 
 Search within a tenant and selected partitions.
 
+Body fields:
+
+- `tenantId`
+- `query`
+- `partitions`
+- `types`
+- `layers`
+- `tags`
+- `limit`
+- `rerank`
+
+Notes:
+
+- `tags` is the current lightweight collaboration filter surface for multi-agent recall and shared-memory routing
+
 Auth notes:
 
 - admin token can query everything

@@ -664,17 +664,20 @@ class HubService:
                 parameters,
             ).fetchall()
 
+        tag_filters = {normalize_key(item) for item in payload.tags if item.strip()}
         filtered_rows = []
         for row in rows:
-            if partition_layer_rules is None:
-                filtered_rows.append(row)
-                continue
-            partition_key = str(row["partition_key"])
-            allowed_layers = partition_layer_rules.get(partition_key)
-            if not allowed_layers:
-                continue
-            if str(row["layer"]) not in allowed_layers:
-                continue
+            if partition_layer_rules is not None:
+                partition_key = str(row["partition_key"])
+                allowed_layers = partition_layer_rules.get(partition_key)
+                if not allowed_layers:
+                    continue
+                if str(row["layer"]) not in allowed_layers:
+                    continue
+            if tag_filters:
+                row_tags = {normalize_key(item) for item in from_json(row["tags"], [])}
+                if not (row_tags & tag_filters):
+                    continue
             filtered_rows.append(row)
 
         flags = 0 if payload.case_sensitive else re.IGNORECASE
@@ -1046,19 +1049,23 @@ class HubService:
                 parameters,
             ).fetchall()
 
+        tag_filters = {normalize_key(item) for item in payload.tags if item.strip()}
         filtered_rows = []
         for row in rows:
-            if partition_layer_rules is None:
-                filtered_rows.append(row)
-                continue
+            if partition_layer_rules is not None:
+                partition_key = str(row["partition_key"])
+                allowed_layers = partition_layer_rules.get(partition_key)
+                if not allowed_layers:
+                    continue
+                row_layer = str(row["layer"])
+                if row_layer not in allowed_layers:
+                    continue
 
-            partition_key = str(row["partition_key"])
-            allowed_layers = partition_layer_rules.get(partition_key)
-            if not allowed_layers:
-                continue
-            row_layer = str(row["layer"])
-            if row_layer not in allowed_layers:
-                continue
+            if tag_filters:
+                row_tags = {normalize_key(item) for item in from_json(row["tags"], [])}
+                if not (row_tags & tag_filters):
+                    continue
+
             filtered_rows.append(row)
 
         query_vector_list = self._safe_embed([payload.query])

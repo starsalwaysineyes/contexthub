@@ -350,6 +350,17 @@ def test_grep_records_returns_line_numbers(tmp_path: Path) -> None:
             tags=["log", "agent:openclaw"],
         )
     )
+    service.create_record(
+        CreateRecordRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="resource",
+            layer="l2",
+            title="Codex log",
+            text="match elsewhere\nsecond match",
+            tags=["agent:codex"],
+        )
+    )
 
     result = service.grep_records(
         GrepRequest(
