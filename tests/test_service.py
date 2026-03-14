@@ -12,6 +12,7 @@ from contexthub.schemas import (
     CreatePartitionRequest,
     CreateRecordRequest,
     CreateTenantRequest,
+    GrepRequest,
     ImportResourceRequest,
     QueryRequest,
     RegisterAgentRequest,
@@ -234,6 +235,62 @@ def test_query_can_filter_by_layer(tmp_path: Path) -> None:
     assert result["items"][0]["title"] == "Raw transcript"
 
 
+def test_read_record_lines_returns_numbered_slice(tmp_path: Path) -> None:
+    service = build_service(tmp_path)
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo-lines", name="Demo Lines"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+
+    record = service.create_record(
+        CreateRecordRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="resource",
+            layer="l2",
+            title="Log file",
+            text="line 1\nline 2\nline 3\nline 4",
+        )
+    )
+
+    page = service.read_record_lines(record["id"], line_start=2, line_limit=2)
+    assert page["totalLines"] == 4
+    assert page["returnedLines"] == 2
+    assert page["hasMore"] is True
+    assert page["items"][0]["lineNumber"] == 2
+    assert page["items"][1]["text"] == "line 3"
+
+
+def test_grep_records_returns_line_numbers(tmp_path: Path) -> None:
+    service = build_service(tmp_path)
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo-grep", name="Demo Grep"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+    service.create_record(
+        CreateRecordRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="resource",
+            layer="l2",
+            title="System log",
+            text="alpha\nmatch here\nbeta match\ngamma",
+        )
+    )
+
+    result = service.grep_records(
+        GrepRequest(
+            tenantId=tenant["id"],
+            pattern="match",
+            partitions=["memory"],
+            layers=["l2"],
+            limit=10,
+        )
+    )
+
+    assert result["search"]["matchedRecords"] == 1
+    assert result["search"]["returnedMatches"] == 2
+    assert result["items"][0]["lineNumber"] == 2
+    assert result["items"][1]["lineNumber"] == 3
+    assert result["items"][0]["matchRanges"][0]["start"] == 0
+
+
 def test_update_record_rechunks_and_changes_layer(tmp_path: Path) -> None:
     service = build_service(tmp_path)
     tenant = service.create_tenant(CreateTenantRequest(slug="demo-update", name="Demo Update"))
@@ -367,6 +424,48 @@ def test_import_resource_accepts_string_importance_from_derive(tmp_path: Path) -
     by_layer = {record["layer"]: record for record in result["derivation"]["records"]}
     assert by_layer["l1"]["importance"] == 3.0
     assert by_layer["l0"]["importance"] == 4.0
+
+
+def test_app_can_read_lines_and_grep_record_text(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CONTEXT_HUB_DATABASE_PATH", str(tmp_path / "read-api.db"))
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_EMBEDDINGS", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_RERANK", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_AUTH", "true")
+    monkeypatch.setenv("CONTEXT_HUB_ADMIN_TOKEN", "admin-secret")
+    app = create_app()
+    client = TestClient(app)
+    admin_headers = {"Authorization": "Bearer admin-secret"}
+
+    tenant = client.post("/v1/tenants", headers=admin_headers, json={"slug": "demo-readapi", "name": "Demo Read API"}).json()
+    client.post(
+        "/v1/partitions",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "key": "memory", "name": "Memory"},
+    ).raise_for_status()
+    record = client.post(
+        "/v1/records",
+        headers=admin_headers,
+        json={
+            "tenantId": tenant["id"],
+            "partitionKey": "memory",
+            "type": "resource",
+            "layer": "l2",
+            "title": "Readme",
+            "text": "alpha\nbeta hit\ngamma hit",
+        },
+    ).json()
+
+    lines = client.get(f"/v1/records/{record['id']}/lines?from_line=2&limit=1", headers=admin_headers)
+    assert lines.status_code == 200
+    assert lines.json()["items"][0]["lineNumber"] == 2
+
+    grep = client.post(
+        "/v1/records/grep",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "pattern": "hit", "partitions": ["memory"], "layers": ["l2"]},
+    )
+    assert grep.status_code == 200
+    assert grep.json()["items"][0]["lineNumber"] == 2
 
 
 def test_app_can_get_and_update_record(tmp_path: Path, monkeypatch) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -14,6 +15,7 @@ from contexthub.schemas import (
     CreatePrincipalRequest,
     CreateRecordRequest,
     CreateTenantRequest,
+    GrepRequest,
     ImportResourceRequest,
     QueryRequest,
     RegisterAgentRequest,
@@ -402,6 +404,139 @@ class HubService:
                     )
 
         return self._serialize_record(record)
+
+    def read_record_lines(self, record_id: str, *, line_start: int = 1, line_limit: int = 80) -> dict[str, Any]:
+        record = self.get_record(record_id)
+        lines = record["text"].splitlines()
+        start = max(line_start, 1)
+        limit = max(min(line_limit, 500), 1)
+        start_index = start - 1
+        selected = lines[start_index : start_index + limit]
+        return {
+            "record": record,
+            "fromLine": start,
+            "limit": limit,
+            "totalLines": len(lines),
+            "returnedLines": len(selected),
+            "hasMore": start_index + len(selected) < len(lines),
+            "items": [
+                {"lineNumber": start_index + index + 1, "text": text}
+                for index, text in enumerate(selected)
+            ],
+        }
+
+    def grep_records(
+        self,
+        payload: GrepRequest,
+        *,
+        partition_layer_rules: dict[str, set[str]] | None = None,
+    ) -> dict[str, Any]:
+        with self.store.connection() as conn:
+            self._assert_tenant(conn, payload.tenant_id)
+            partition_keys = [normalize_key(item) for item in payload.partitions if item.strip()]
+            if not partition_keys:
+                partition_rows = conn.execute(
+                    "SELECT key FROM partitions WHERE tenant_id = ?",
+                    (payload.tenant_id,),
+                ).fetchall()
+                partition_keys = [str(row["key"]) for row in partition_rows]
+
+            if not partition_keys:
+                return {
+                    "items": [],
+                    "search": {
+                        "scannedRecords": 0,
+                        "matchedRecords": 0,
+                        "returnedMatches": 0,
+                    },
+                }
+
+            types = [normalize_key(item) for item in payload.types if item.strip()]
+            layers = [normalize_key(item) for item in payload.layers if item.strip()]
+            clauses = ["tenant_id = ?"]
+            parameters: list[Any] = [payload.tenant_id]
+
+            partition_placeholders = ", ".join("?" for _ in partition_keys)
+            clauses.append(f"partition_key IN ({partition_placeholders})")
+            parameters.extend(partition_keys)
+
+            if types:
+                type_placeholders = ", ".join("?" for _ in types)
+                clauses.append(f"type IN ({type_placeholders})")
+                parameters.extend(types)
+
+            if layers:
+                layer_placeholders = ", ".join("?" for _ in layers)
+                clauses.append(f"layer IN ({layer_placeholders})")
+                parameters.extend(layers)
+
+            rows = conn.execute(
+                f"SELECT * FROM records WHERE {' AND '.join(clauses)} ORDER BY updated_at DESC",
+                parameters,
+            ).fetchall()
+
+        filtered_rows = []
+        for row in rows:
+            if partition_layer_rules is None:
+                filtered_rows.append(row)
+                continue
+            partition_key = str(row["partition_key"])
+            allowed_layers = partition_layer_rules.get(partition_key)
+            if not allowed_layers:
+                continue
+            if str(row["layer"]) not in allowed_layers:
+                continue
+            filtered_rows.append(row)
+
+        flags = 0 if payload.case_sensitive else re.IGNORECASE
+        pattern = payload.pattern if payload.regex else re.escape(payload.pattern)
+        compiled = re.compile(pattern, flags)
+        limit = max(min(payload.limit or 20, 500), 1)
+
+        items: list[dict[str, Any]] = []
+        matched_records = 0
+        for row in filtered_rows:
+            record = self._serialize_record(dict(row))
+            record_matches = 0
+            for line_number, line_text in enumerate(record["text"].splitlines(), start=1):
+                matches = list(compiled.finditer(line_text))
+                if not matches:
+                    continue
+                record_matches += 1
+                items.append(
+                    {
+                        "recordId": record["id"],
+                        "title": record["title"],
+                        "type": record["type"],
+                        "layer": record["layer"],
+                        "partitionKey": record["partitionKey"],
+                        "lineNumber": line_number,
+                        "text": line_text,
+                        "matchCount": len(matches),
+                        "matchRanges": [
+                            {"start": match.start(), "end": match.end()}
+                            for match in matches
+                        ],
+                    }
+                )
+                if len(items) >= limit:
+                    break
+            if record_matches > 0:
+                matched_records += 1
+            if len(items) >= limit:
+                break
+
+        return {
+            "items": items,
+            "search": {
+                "pattern": payload.pattern,
+                "regex": payload.regex,
+                "caseSensitive": payload.case_sensitive,
+                "scannedRecords": len(filtered_rows),
+                "matchedRecords": matched_records,
+                "returnedMatches": len(items),
+            },
+        }
 
     def get_derivation_job(self, job_id: str) -> dict[str, Any]:
         with self.store.connection() as conn:

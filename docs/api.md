@@ -93,6 +93,38 @@ Notes:
 - if `text` changes, chunks are rebuilt and embeddings are recalculated when available
 - partition/tenant reassignment is intentionally not part of this first patch API
 
+## `GET /v1/records/{recordId}/lines`
+
+Read one record as numbered lines.
+
+Query params:
+
+- `from_line` (default `1`)
+- `limit` (default `80`, capped server-side)
+
+Notes:
+
+- this is the first file-like read API for agents that want bounded reads instead of whole-record fetches
+- response includes `totalLines`, `returnedLines`, and `hasMore`
+
+## `POST /v1/records/grep`
+
+Search record text line-by-line and return line numbers.
+
+Body fields:
+
+- same scoping fields as `POST /v1/query`: `tenantId`, `partitions`, `types`, `layers`
+- `pattern`
+- `regex`
+- `caseSensitive`
+- `limit`
+
+Notes:
+
+- returns line-level hits with `lineNumber`, `text`, and `matchRanges`
+- this is meant to feel closer to `grep` / `rg` than semantic recall
+- current output is line-oriented, not yet full file-context windows
+
 ## `POST /v1/resources/import`
 
 Import a resource into a target layer and optionally derive abstraction layers.

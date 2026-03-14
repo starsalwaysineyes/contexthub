@@ -86,6 +86,17 @@ class QueryRequest(BaseModel):
     rerank: bool | None = None
 
 
+class GrepRequest(BaseModel):
+    tenant_id: str = Field(alias="tenantId")
+    pattern: str
+    partitions: list[str] = Field(default_factory=list)
+    types: list[str] = Field(default_factory=list)
+    layers: list[RecordLayer] = Field(default_factory=list)
+    regex: bool = False
+    case_sensitive: bool = Field(default=False, alias="caseSensitive")
+    limit: int | None = None
+
+
 class MemoryEntry(BaseModel):
     type: str = "memory"
     layer: RecordLayer = "l0"

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ContextHub API
-  version: 0.7.0
+  version: 0.8.0
   description: Agent-native context backend API.
 servers:
   - url: http://127.0.0.1:4040
@@ -238,6 +238,33 @@ components:
           maximum: 5
         pinned:
           type: boolean
+
+    GrepRequest:
+      type: object
+      required: [tenantId, pattern]
+      properties:
+        tenantId:
+          type: string
+        pattern:
+          type: string
+        partitions:
+          type: array
+          items:
+            type: string
+        types:
+          type: array
+          items:
+            type: string
+        layers:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecordLayer"
+        regex:
+          type: boolean
+        caseSensitive:
+          type: boolean
+        limit:
+          type: integer
 
     ImportContent:
       type: object
@@ -607,6 +634,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Record"
+
+  /v1/records/{recordId}/lines:
+    get:
+      security:
+        - bearerAuth: []
+      summary: Read one record as numbered lines
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: from_line
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 80
+      responses:
+        "200":
+          description: OK
+
+  /v1/records/grep:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Search record text line-by-line with line numbers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrepRequest"
+      responses:
+        "200":
+          description: OK
 
   /v1/resources/import:
     post:
