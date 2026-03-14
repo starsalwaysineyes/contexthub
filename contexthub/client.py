@@ -59,6 +59,12 @@ class ContextHubClient:
     def get_derivation_job(self, job_id: str) -> dict[str, Any]:
         return self._request("GET", f"/v1/derivation-jobs/{job_id}")
 
+    def list_derivation_jobs(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/derivation-jobs/list", payload)
+
+    def redrive_derivation_jobs(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/derivation-jobs/redrive", payload)
+
     def list_record_links(self, record_id: str) -> dict[str, Any]:
         return self._request("GET", f"/v1/records/{record_id}/links")
 

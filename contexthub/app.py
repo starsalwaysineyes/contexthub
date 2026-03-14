@@ -20,8 +20,10 @@ from contexthub.schemas import (
     GrepRequest,
     HealthResponse,
     ImportResourceRequest,
+    ListDerivationJobsRequest,
     ListRecordsRequest,
     QueryRequest,
+    RedriveDerivationJobsRequest,
     RegisterAgentRequest,
     UpdateRecordRequest,
     UpsertPrincipalAclRequest,
@@ -261,6 +263,38 @@ def create_app() -> FastAPI:
         job = service.get_derivation_job(job_id)
         security.ensure_partition_read(auth, job["tenantId"], job["partitionKey"])
         return job
+
+    @app.post("/v1/derivation-jobs/list")
+    def list_derivation_jobs(payload: ListDerivationJobsRequest, auth: AuthContext = Depends(get_auth)) -> dict:
+        security.require_tenant_match(auth, payload.tenant_id)
+        requested_partitions = [partition.strip().lower() for partition in payload.partitions if partition.strip()]
+        scoped_partitions, _ = security.query_scope(auth, payload.tenant_id, requested_partitions)
+        scoped_payload = payload.model_copy(update={"partitions": scoped_partitions})
+        result = service.list_derivation_jobs(scoped_payload)
+        return attach_scope(
+            result,
+            auth=auth,
+            payload=payload,
+            requested_partitions=requested_partitions,
+            effective_partitions=scoped_partitions,
+            partition_layer_rules=None,
+        )
+
+    @app.post("/v1/derivation-jobs/redrive", status_code=202)
+    def redrive_derivation_jobs(payload: RedriveDerivationJobsRequest, auth: AuthContext = Depends(get_auth)) -> dict:
+        security.require_tenant_match(auth, payload.tenant_id)
+        requested_partitions = [partition.strip().lower() for partition in payload.partitions if partition.strip()]
+        scoped_partitions = security.write_scope(auth, payload.tenant_id, requested_partitions)
+        scoped_payload = payload.model_copy(update={"partitions": scoped_partitions})
+        result = service.redrive_derivation_jobs(scoped_payload, schedule_job=queue_derivation_job)
+        return attach_scope(
+            result,
+            auth=auth,
+            payload=payload,
+            requested_partitions=requested_partitions,
+            effective_partitions=scoped_partitions,
+            partition_layer_rules=None,
+        )
 
     @app.get("/v1/records/{record_id}/links")
     def list_record_links(record_id: str, auth: AuthContext = Depends(get_auth)) -> dict:

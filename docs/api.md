@@ -186,8 +186,9 @@ Current MVP supports:
 
 - `content.kind = "inline_text"`
 - optional derivation via LiteLLM in `sync` or background `async` mode
-- persisted derivation job inspection via `GET /v1/derivation-jobs/{jobId}`
+- persisted derivation job inspection via `GET /v1/derivation-jobs/{jobId}` and `POST /v1/derivation-jobs/list`
 - persisted lineage via `GET /v1/records/{recordId}/links`
+- operator redrive via `POST /v1/derivation-jobs/redrive`
 
 Request example:
 
@@ -273,7 +274,46 @@ Notes:
 
 - useful for debugging import/derive behavior
 - `status` now transitions through `queued -> running -> completed|failed` for async jobs
-- current async worker is in-process background execution; restart recovery is the next hardening step
+- startup recovery now requeues stranded `queued` / `running` jobs on service boot
+
+## `POST /v1/derivation-jobs/list`
+
+List persisted derivation jobs for a tenant and partition scope.
+
+Body fields:
+
+- `tenantId`
+- `partitions`
+- `statuses`
+- `sourceRecordId`
+- `offset`
+- `limit`
+
+Notes:
+
+- response includes `items`, `page`, `statusCounts`, and a `scope` block
+- each item includes `sourceRecordTitle` / `sourceRecordLayer` when the source record still exists
+- this is the operator-friendly way to inspect backlog / failures without opening SQLite directly
+
+## `POST /v1/derivation-jobs/redrive`
+
+Requeue derivation jobs for another async execution pass.
+
+Body fields:
+
+- `tenantId`
+- `partitions`
+- `statuses` (defaults to `failed`)
+- `jobIds`
+- `dryRun`
+- `limit`
+- `reason`
+
+Notes:
+
+- requires write access to the selected partitions
+- response includes selected jobs plus a `redrive` summary block
+- redriven jobs keep prior metadata and gain `redriveCount`, `redrivenFromStatus`, and `redriveReason`
 
 ## `GET /v1/records/{recordId}/links`
 

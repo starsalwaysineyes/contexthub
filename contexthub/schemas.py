@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 RecordLayer = Literal["l0", "l1", "l2"]
+DerivationJobStatus = Literal["queued", "running", "completed", "failed"]
 DeriveMode = Literal["sync", "async"]
 DeriveStrategy = Literal["preserve_manual", "create_sidecar", "replace_derived_only"]
 PromptPreset = Literal["archive_and_memory", "memory_only", "archive_only"]
@@ -123,6 +124,25 @@ class BrowseTreeRequest(BaseModel):
     source_kind: str | None = Field(default=None, alias="sourceKind")
     path_prefix: str | None = Field(default=None, alias="pathPrefix")
     limit: int = 200
+
+
+class ListDerivationJobsRequest(BaseModel):
+    tenant_id: str = Field(alias="tenantId")
+    partitions: list[str] = Field(default_factory=list)
+    statuses: list[DerivationJobStatus] = Field(default_factory=list)
+    source_record_id: str | None = Field(default=None, alias="sourceRecordId")
+    offset: int = 0
+    limit: int = 50
+
+
+class RedriveDerivationJobsRequest(BaseModel):
+    tenant_id: str = Field(alias="tenantId")
+    partitions: list[str] = Field(default_factory=list)
+    statuses: list[DerivationJobStatus] = Field(default_factory=lambda: ["failed"])
+    job_ids: list[str] = Field(default_factory=list, alias="jobIds")
+    dry_run: bool = Field(default=False, alias="dryRun")
+    limit: int = 20
+    reason: str = "manual_redrive"
 
 
 class MemoryEntry(BaseModel):

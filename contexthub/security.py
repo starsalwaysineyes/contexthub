@@ -129,6 +129,24 @@ class SecurityManager:
         partitions = sorted(readable)
         return partitions, {partition: readable[partition] for partition in partitions}
 
+    def write_scope(self, auth: AuthContext, tenant_id: str, requested_partitions: list[str]) -> list[str]:
+        if auth.kind == "admin":
+            return requested_partitions
+
+        self.require_tenant_match(auth, tenant_id)
+        writable = {acl["partitionKey"] for acl in self.get_principal_acl(auth.principal_id) if acl["canWrite"]}
+
+        if requested_partitions:
+            missing = [partition for partition in requested_partitions if partition not in writable]
+            if missing:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Write access denied: {', '.join(missing)}")
+            return requested_partitions
+
+        if not writable:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No writable partitions configured")
+
+        return sorted(writable)
+
     def _lookup_acl(self, principal_id: str | None, partition_key: str) -> dict[str, Any] | None:
         if principal_id is None:
             return None

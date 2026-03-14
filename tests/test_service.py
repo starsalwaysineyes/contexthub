@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -15,8 +16,10 @@ from contexthub.schemas import (
     BrowseTreeRequest,
     GrepRequest,
     ImportResourceRequest,
+    ListDerivationJobsRequest,
     ListRecordsRequest,
     QueryRequest,
+    RedriveDerivationJobsRequest,
     RegisterAgentRequest,
     UpdateRecordRequest,
 )
@@ -156,6 +159,16 @@ def build_service(tmp_path: Path, abstractor=None) -> HubService:
         abstractor=abstractor or FakeAbstractor(),
         config=config,
     )
+
+
+def mark_job_failed(database_path: Path, job_id: str, message: str = "synthetic failure") -> None:
+    conn = sqlite3.connect(database_path)
+    conn.execute(
+        "UPDATE derivation_jobs SET status = ?, error_message = ?, finished_at = ?, updated_at = ? WHERE id = ?",
+        ("failed", message, "2026-03-15T00:00:00Z", "2026-03-15T00:00:00Z", job_id),
+    )
+    conn.commit()
+    conn.close()
 
 
 def test_query_returns_relevant_record(tmp_path: Path) -> None:
@@ -695,6 +708,58 @@ def test_recover_pending_derivation_jobs_runs_queued_and_running_jobs(tmp_path: 
     assert running_job["metadata"]["recoverySourceStatus"] == "running"
 
 
+def test_list_and_redrive_derivation_jobs(tmp_path: Path) -> None:
+    service = build_service(tmp_path)
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo-derive-ops", name="Demo Derive Ops"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+
+    failed = service.import_resource(
+        ImportResourceRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="resource",
+            targetLayer="l2",
+            title="Failed note",
+            content={"kind": "inline_text", "text": "failed body"},
+            derive={"enabled": True, "mode": "async", "emitLayers": ["l0"], "provider": "litellm"},
+        ),
+        schedule_async=lambda _: None,
+    )
+    failed_job_id = failed["derivation"]["job"]["id"]
+    mark_job_failed(tmp_path / "contexthub.db", failed_job_id)
+
+    listed = service.list_derivation_jobs(
+        ListDerivationJobsRequest(
+            tenantId=tenant["id"],
+            partitions=["memory"],
+            statuses=["failed"],
+        )
+    )
+
+    assert listed["page"]["totalMatched"] == 1
+    assert listed["statusCounts"] == {"failed": 1}
+    assert listed["items"][0]["id"] == failed_job_id
+    assert listed["items"][0]["sourceRecordTitle"] == "Failed note"
+
+    redriven = service.redrive_derivation_jobs(
+        RedriveDerivationJobsRequest(
+            tenantId=tenant["id"],
+            partitions=["memory"],
+            statuses=["failed"],
+            reason="manual_redrive",
+        ),
+        schedule_job=lambda _: None,
+    )
+
+    assert redriven["redrive"]["matchedJobs"] == 1
+    assert redriven["redrive"]["selectedJobs"] == 1
+    assert redriven["items"][0]["status"] == "queued"
+    job = service.get_derivation_job(failed_job_id)
+    assert job["status"] == "queued"
+    assert job["metadata"]["redriveCount"] == 1
+    assert job["metadata"]["redrivenFromStatus"] == "failed"
+
+
 def test_import_resource_accepts_string_importance_from_derive(tmp_path: Path) -> None:
     service = build_service(tmp_path, abstractor=StringImportanceAbstractor())
     tenant = service.create_tenant(CreateTenantRequest(slug="demo-importance", name="Demo Importance"))
@@ -1026,6 +1091,125 @@ def test_app_can_run_async_derivation_job_and_fetch_links(tmp_path: Path, monkey
     links = client.get(f"/v1/records/{body['record']['id']}/links", headers=admin_headers)
     assert links.status_code == 200
     assert len(links.json()["items"]) == 2
+
+
+def test_app_can_list_and_redrive_derivation_jobs(tmp_path: Path, monkeypatch) -> None:
+    database_path = tmp_path / "derive-ops-api.db"
+    monkeypatch.setenv("CONTEXT_HUB_DATABASE_PATH", str(database_path))
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_EMBEDDINGS", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_RERANK", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_AUTH", "true")
+    monkeypatch.setenv("CONTEXT_HUB_ADMIN_TOKEN", "admin-secret")
+    monkeypatch.setattr(app_module, "LiteLLMAbstractionClient", lambda config: FakeAbstractor())
+    monkeypatch.setattr(app_module, "ThreadPoolExecutor", ImmediateExecutor)
+    app = create_app()
+    client = TestClient(app)
+    admin_headers = {"Authorization": "Bearer admin-secret"}
+
+    tenant = client.post("/v1/tenants", headers=admin_headers, json={"slug": "demo-derive-ops", "name": "Demo Derive Ops"}).json()
+    client.post(
+        "/v1/partitions",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "key": "memory", "name": "Memory"},
+    ).raise_for_status()
+    created = client.post(
+        "/v1/resources/import",
+        headers=admin_headers,
+        json={
+            "tenantId": tenant["id"],
+            "partitionKey": "memory",
+            "targetLayer": "l2",
+            "title": "Ops note",
+            "content": {"kind": "inline_text", "text": "ops body"},
+            "derive": {"enabled": True, "mode": "async", "emitLayers": ["l0"], "provider": "litellm"},
+        },
+    ).json()
+    job_id = created["derivation"]["job"]["id"]
+    mark_job_failed(database_path, job_id)
+
+    listed = client.post(
+        "/v1/derivation-jobs/list",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "partitions": ["memory"], "statuses": ["failed"]},
+    )
+    assert listed.status_code == 200
+    assert listed.json()["page"]["totalMatched"] == 1
+    assert listed.json()["items"][0]["sourceRecordTitle"] == "Ops note"
+    assert listed.json()["scope"]["effectivePartitions"] == ["memory"]
+
+    redriven = client.post(
+        "/v1/derivation-jobs/redrive",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "partitions": ["memory"], "statuses": ["failed"], "reason": "manual_redrive"},
+    )
+    assert redriven.status_code == 202
+    assert redriven.json()["redrive"]["selectedJobs"] == 1
+    fetched = client.get(f"/v1/derivation-jobs/{job_id}", headers=admin_headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] == "completed"
+    assert fetched.json()["metadata"]["redriveReason"] == "manual_redrive"
+
+
+def test_app_redrive_derivation_jobs_requires_write_access(tmp_path: Path, monkeypatch) -> None:
+    database_path = tmp_path / "derive-ops-acl.db"
+    monkeypatch.setenv("CONTEXT_HUB_DATABASE_PATH", str(database_path))
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_EMBEDDINGS", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_RERANK", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_AUTH", "true")
+    monkeypatch.setenv("CONTEXT_HUB_ADMIN_TOKEN", "admin-secret")
+    monkeypatch.setattr(app_module, "LiteLLMAbstractionClient", lambda config: FakeAbstractor())
+    monkeypatch.setattr(app_module, "ThreadPoolExecutor", ImmediateExecutor)
+    app = create_app()
+    client = TestClient(app)
+    admin_headers = {"Authorization": "Bearer admin-secret"}
+
+    tenant = client.post("/v1/tenants", headers=admin_headers, json={"slug": "demo-derive-acl", "name": "Demo Derive ACL"}).json()
+    client.post(
+        "/v1/partitions",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "key": "memory", "name": "Memory"},
+    ).raise_for_status()
+    principal = client.post(
+        "/v1/principals",
+        headers=admin_headers,
+        json={"tenantId": tenant["id"], "name": "Reader", "kind": "service"},
+    ).json()
+    principal_headers = {"Authorization": f"Bearer {principal['token']}"}
+    client.post(
+        f"/v1/principals/{principal['id']}/acl",
+        headers=admin_headers,
+        json={"partitionKey": "memory", "canRead": True, "canWrite": False, "allowedLayers": ["l0", "l1", "l2"]},
+    ).raise_for_status()
+
+    created = client.post(
+        "/v1/resources/import",
+        headers=admin_headers,
+        json={
+            "tenantId": tenant["id"],
+            "partitionKey": "memory",
+            "targetLayer": "l2",
+            "title": "Restricted ops note",
+            "content": {"kind": "inline_text", "text": "ops body"},
+            "derive": {"enabled": True, "mode": "async", "emitLayers": ["l0"], "provider": "litellm"},
+        },
+    ).json()
+    job_id = created["derivation"]["job"]["id"]
+    mark_job_failed(database_path, job_id)
+
+    listed = client.post(
+        "/v1/derivation-jobs/list",
+        headers=principal_headers,
+        json={"tenantId": tenant["id"], "partitions": ["memory"], "statuses": ["failed"]},
+    )
+    assert listed.status_code == 200
+    assert listed.json()["page"]["totalMatched"] == 1
+
+    denied = client.post(
+        "/v1/derivation-jobs/redrive",
+        headers=principal_headers,
+        json={"tenantId": tenant["id"], "partitions": ["memory"], "statuses": ["failed"]},
+    )
+    assert denied.status_code == 403
 
 
 def test_health_route(tmp_path: Path, monkeypatch) -> None:

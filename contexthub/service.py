@@ -20,8 +20,10 @@ from contexthub.schemas import (
     CreateTenantRequest,
     GrepRequest,
     ImportResourceRequest,
+    ListDerivationJobsRequest,
     ListRecordsRequest,
     QueryRequest,
+    RedriveDerivationJobsRequest,
     RegisterAgentRequest,
     UpdateRecordRequest,
     UpsertPrincipalAclRequest,
@@ -760,6 +762,93 @@ class HubService:
             raise HubError(f"Unknown derivation job: {job_id}")
         return self._serialize_derivation_job(dict(row))
 
+    def list_derivation_jobs(self, payload: ListDerivationJobsRequest) -> dict[str, Any]:
+        total_matched, status_counts, rows = self._select_derivation_job_rows(
+            tenant_id=payload.tenant_id,
+            partitions=payload.partitions,
+            statuses=payload.statuses,
+            source_record_id=payload.source_record_id,
+            job_ids=[],
+            limit=payload.limit,
+            offset=payload.offset,
+        )
+        return {
+            "items": [self._serialize_derivation_job(row) for row in rows],
+            "page": {
+                "offset": payload.offset,
+                "limit": payload.limit,
+                "totalMatched": total_matched,
+            },
+            "statusCounts": status_counts,
+        }
+
+    def redrive_derivation_jobs(
+        self,
+        payload: RedriveDerivationJobsRequest,
+        *,
+        schedule_job: Callable[[str], None] | None = None,
+    ) -> dict[str, Any]:
+        redrive_reason = normalize_key(payload.reason) or "manual_redrive"
+        total_matched, status_counts, rows = self._select_derivation_job_rows(
+            tenant_id=payload.tenant_id,
+            partitions=payload.partitions,
+            statuses=payload.statuses,
+            source_record_id=None,
+            job_ids=payload.job_ids,
+            limit=payload.limit,
+            offset=0,
+        )
+
+        if payload.dry_run:
+            return {
+                "items": [self._serialize_derivation_job(row) for row in rows],
+                "redrive": {
+                    "matchedJobs": total_matched,
+                    "selectedJobs": len(rows),
+                    "scheduledJobs": 0,
+                    "dryRun": True,
+                    "statusCounts": status_counts,
+                    "reason": redrive_reason,
+                },
+            }
+
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            metadata = from_json(row.get("metadata"), {})
+            redrive_count = int(metadata.get("redriveCount", 0) or 0) + 1
+            effective_mode = "async" if schedule_job is not None else (row.get("effective_mode") or row["mode"] or "sync")
+            updated_job = self._update_derivation_job(
+                row["id"],
+                status="queued",
+                effective_mode=effective_mode,
+                error_message=None,
+                metadata={
+                    "redriveCount": redrive_count,
+                    "redrivenFromStatus": row["status"],
+                    "redriveReason": redrive_reason,
+                },
+                finished_at=None,
+            )
+            items.append(updated_job)
+
+        if schedule_job is None:
+            items = [self.run_derivation_job(job["id"], max_attempts=self.config.derivation_max_attempts) for job in items]
+        else:
+            for job in items:
+                schedule_job(job["id"])
+
+        return {
+            "items": items,
+            "redrive": {
+                "matchedJobs": total_matched,
+                "selectedJobs": len(items),
+                "scheduledJobs": 0 if schedule_job is None else len(items),
+                "dryRun": False,
+                "statusCounts": status_counts,
+                "reason": redrive_reason,
+            },
+        }
+
     def recover_pending_derivation_jobs(
         self,
         *,
@@ -1273,6 +1362,92 @@ class HubService:
             finished_at=now_iso(),
         )
 
+    def _select_derivation_job_rows(
+        self,
+        *,
+        tenant_id: str,
+        partitions: list[str],
+        statuses: list[str],
+        source_record_id: str | None,
+        job_ids: list[str],
+        limit: int,
+        offset: int,
+    ) -> tuple[int, dict[str, int], list[dict[str, Any]]]:
+        where_clause, params = self._build_derivation_job_where_clause(
+            tenant_id=tenant_id,
+            partitions=partitions,
+            statuses=statuses,
+            source_record_id=source_record_id,
+            job_ids=job_ids,
+            table_alias="derivation_jobs",
+        )
+        with self.store.connection() as conn:
+            total_row = conn.execute(
+                f"SELECT COUNT(*) AS count FROM derivation_jobs WHERE {where_clause}",
+                params,
+            ).fetchone()
+            status_rows = conn.execute(
+                f"SELECT status, COUNT(*) AS count FROM derivation_jobs WHERE {where_clause} GROUP BY status ORDER BY status",
+                params,
+            ).fetchall()
+            rows = conn.execute(
+                f"""
+                SELECT
+                  derivation_jobs.*, 
+                  records.title AS source_record_title,
+                  records.layer AS source_record_layer
+                FROM derivation_jobs
+                LEFT JOIN records ON records.id = derivation_jobs.source_record_id
+                WHERE {where_clause}
+                ORDER BY derivation_jobs.created_at DESC, derivation_jobs.id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (*params, limit, offset),
+            ).fetchall()
+        return (
+            int(total_row["count"] if total_row is not None else 0),
+            {row["status"]: int(row["count"]) for row in status_rows},
+            [dict(row) for row in rows],
+        )
+
+    def _build_derivation_job_where_clause(
+        self,
+        *,
+        tenant_id: str,
+        partitions: list[str],
+        statuses: list[str],
+        source_record_id: str | None,
+        job_ids: list[str],
+        table_alias: str = "",
+    ) -> tuple[str, list[Any]]:
+        alias = f"{table_alias}." if table_alias else ""
+        clauses = [f"{alias}tenant_id = ?"]
+        params: list[Any] = [tenant_id]
+
+        normalized_partitions = [normalize_key(item) for item in partitions if item and item.strip()]
+        if normalized_partitions:
+            placeholders = ", ".join("?" for _ in normalized_partitions)
+            clauses.append(f"{alias}partition_key IN ({placeholders})")
+            params.extend(normalized_partitions)
+
+        normalized_statuses = [normalize_key(item) for item in statuses if item and item.strip()]
+        if normalized_statuses:
+            placeholders = ", ".join("?" for _ in normalized_statuses)
+            clauses.append(f"{alias}status IN ({placeholders})")
+            params.extend(normalized_statuses)
+
+        normalized_job_ids = [item.strip() for item in job_ids if item and item.strip()]
+        if normalized_job_ids:
+            placeholders = ", ".join("?" for _ in normalized_job_ids)
+            clauses.append(f"{alias}id IN ({placeholders})")
+            params.extend(normalized_job_ids)
+
+        if source_record_id and source_record_id.strip():
+            clauses.append(f"{alias}source_record_id = ?")
+            params.append(source_record_id.strip())
+
+        return " AND ".join(clauses), params
+
     def _get_derivation_job_row(self, job_id: str) -> dict[str, Any]:
         with self.store.connection() as conn:
             row = conn.execute(
@@ -1669,6 +1844,8 @@ class HubService:
             "tenantId": job["tenant_id"],
             "partitionKey": job["partition_key"],
             "sourceRecordId": job["source_record_id"],
+            "sourceRecordTitle": job.get("source_record_title"),
+            "sourceRecordLayer": job.get("source_record_layer"),
             "status": job["status"],
             "mode": job["mode"],
             "effectiveMode": job.get("effective_mode"),
