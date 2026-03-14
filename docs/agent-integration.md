@@ -13,20 +13,26 @@ The minimum contract is:
 
 ## Recommended adapter shape
 
-Each adapter should expose three methods:
+Each adapter should expose a small standard surface:
 
 ```ts
+query(input)
 writeRecord(input)
 commitSession(input)
-query(input)
+uploadFile(input)
+importBatch(input)
+inspectJob(input)
+inspectLinks(input)
 ```
 
-That is enough for:
+That covers:
 
 - chat agents
 - coding agents
 - cron or workflow agents
 - review bots
+- migration utilities
+- operator/debug tooling
 
 ## OpenClaw adapter idea
 
@@ -36,12 +42,17 @@ That is enough for:
 - include the final summary
 - include only curated `memoryEntries`, not every raw turn
 - set `idempotencyKey` on memory entries when possible
+- allow explicit user-facing actions such as:
+  - save text directly to `L0` / `L1` / `L2`
+  - upload a local file directly to `L0` / `L1` / `L2`
+  - import a local folder with an optional preset
 
 ### Read side
 
 - before answering, call `POST /v1/query`
 - scope partitions per channel, task, or project
 - ask for a small result set with citations
+- expose retrieval trace when operators need to inspect why something was recalled
 
 ## Codex or Claude Code adapter idea
 
@@ -81,3 +92,4 @@ curl http://127.0.0.1:4040/v1/query \
 - `contexthub.client.ContextHubClient` (already in this repo)
 - optional `@contexthub/client` for plain Node consumers
 - `@contexthub/openclaw-adapter`
+- adapter presets for local migration (`archive-to-l1`, `daily-to-l0`, `raw-doc-to-l2-derive`) without baking those rules into the backend contract

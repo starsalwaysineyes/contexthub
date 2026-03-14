@@ -23,6 +23,8 @@
 
 - publish adapter examples for OpenClaw, Codex, and Claude Code (done)
 - add session commit helpers and idempotent write wrappers (done for first-pass examples)
+- next: expose a generic write/import surface where clients can explicitly target `L0` / `L1` / `L2`
+- next: treat local archive/daily-memory behavior as optional migration presets, not product assumptions
 - next: add query-plan and citation-focused retrieval responses
 - next: add operator-facing export/import commands
 

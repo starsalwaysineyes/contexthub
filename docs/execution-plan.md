@@ -43,8 +43,10 @@ At that point, the OpenClaw plugin should focus on:
 
 - pre-answer query hook
 - post-task/session commit hook
+- explicit text/file upload to chosen `L0` / `L1` / `L2`
 - channel or project to partition routing
 - configurable recall policy by layer and partition
+- migration presets for local materials without turning those presets into backend rules
 
 ### Phase 4 - migration to the test server
 

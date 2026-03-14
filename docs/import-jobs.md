@@ -39,13 +39,15 @@ uv run python -m contexthub import-markdown \
 
 ## Recommended mapping for local materials
 
-### Daily memory files
+These mappings are migration presets for one local workspace shape. They are not meant to become mandatory product rules.
+
+### Daily memory files (preset example)
 
 - source: `memory/YYYY-MM-DD.md`
 - target layer: `l0`
 - partition suggestion: `memory`
 
-### Archive documents
+### Archive documents (preset example)
 
 - source: `archive/**/*.md`
 - target layer: `l1`
@@ -56,6 +58,12 @@ uv run python -m contexthub import-markdown \
 - source: imported raw materials, transcripts, copied docs
 - target layer: `l2`
 - optional derivation: `--derive-layers l1,l0`
+
+### Product rule that should stay generic
+
+- the caller chooses `targetLayer`
+- the caller may send either inline text or a file-oriented import request
+- presets can help a local migration, but backend semantics should stay layer-first and path-agnostic
 
 ## Example sequences
 
