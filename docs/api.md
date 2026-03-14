@@ -121,6 +121,8 @@ Body fields:
 - `titleContains`
 - `sourceKind`
 - `sourcePathPrefix`
+
+This `tags` field is the current lightweight collaboration rule surface for multi-agent sharing, e.g. `agent:openclaw`, `agent:codex`, `scope:shared`.
 - `offset`
 - `limit`
 
@@ -140,6 +142,7 @@ Body fields:
 - `partitions`
 - `types`
 - `layers`
+- `tags`
 - `sourceKind`
 - `pathPrefix`
 - `limit`
@@ -157,7 +160,7 @@ Search record text line-by-line and return line numbers.
 
 Body fields:
 
-- same scoping fields as `POST /v1/query`: `tenantId`, `partitions`, `types`, `layers`
+- same scoping fields as `POST /v1/query`: `tenantId`, `partitions`, `types`, `layers`, `tags`
 - `pattern`
 - `regex`
 - `caseSensitive`

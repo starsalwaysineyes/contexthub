@@ -557,6 +557,7 @@ class HubService:
                 partitions=payload.partitions,
                 types=payload.types,
                 layers=payload.layers,
+                tags=payload.tags,
                 sourceKind=payload.source_kind,
                 sourcePathPrefix=payload.path_prefix,
                 offset=0,

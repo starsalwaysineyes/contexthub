@@ -82,6 +82,7 @@ class QueryRequest(BaseModel):
     partitions: list[str] = Field(default_factory=list)
     types: list[str] = Field(default_factory=list)
     layers: list[RecordLayer] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     limit: int | None = None
     rerank: bool | None = None
 
@@ -92,6 +93,7 @@ class GrepRequest(BaseModel):
     partitions: list[str] = Field(default_factory=list)
     types: list[str] = Field(default_factory=list)
     layers: list[RecordLayer] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     regex: bool = False
     case_sensitive: bool = Field(default=False, alias="caseSensitive")
     limit: int | None = None
@@ -117,6 +119,7 @@ class BrowseTreeRequest(BaseModel):
     partitions: list[str] = Field(default_factory=list)
     types: list[str] = Field(default_factory=list)
     layers: list[RecordLayer] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     source_kind: str | None = Field(default=None, alias="sourceKind")
     path_prefix: str | None = Field(default=None, alias="pathPrefix")
     limit: int = 200

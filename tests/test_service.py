@@ -347,6 +347,7 @@ def test_grep_records_returns_line_numbers(tmp_path: Path) -> None:
             layer="l2",
             title="System log",
             text="alpha\nmatch here\nbeta match\ngamma",
+            tags=["log", "agent:openclaw"],
         )
     )
 
@@ -356,6 +357,7 @@ def test_grep_records_returns_line_numbers(tmp_path: Path) -> None:
             pattern="match",
             partitions=["memory"],
             layers=["l2"],
+            tags=["log"],
             limit=10,
             beforeContext=1,
             afterContext=1,
@@ -412,10 +414,51 @@ def test_update_record_rechunks_and_changes_layer(tmp_path: Path) -> None:
             query="archive summary richer agent memory",
             partitions=["memory"],
             layers=["l1"],
+            tags=["updated"],
         )
     )
     assert len(result["items"]) == 1
     assert result["items"][0]["recordId"] == record["id"]
+
+
+def test_query_can_filter_by_tags(tmp_path: Path) -> None:
+    service = build_service(tmp_path)
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo-query-tags", name="Demo Query Tags"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+    service.create_record(
+        CreateRecordRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="memory",
+            layer="l0",
+            title="OpenClaw note",
+            text="shared collaboration rule",
+            tags=["agent:openclaw"],
+        )
+    )
+    service.create_record(
+        CreateRecordRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="memory",
+            layer="l0",
+            title="Codex note",
+            text="shared collaboration rule",
+            tags=["agent:codex"],
+        )
+    )
+
+    result = service.query(
+        QueryRequest(
+            tenantId=tenant["id"],
+            query="shared collaboration rule",
+            partitions=["memory"],
+            layers=["l0"],
+            tags=["agent:codex"],
+        )
+    )
+    assert len(result["items"]) == 1
+    assert result["items"][0]["title"] == "Codex note"
 
 
 def test_import_resource_can_derive_l1_and_l0(tmp_path: Path) -> None:
@@ -532,6 +575,7 @@ def test_app_can_browse_record_tree(tmp_path: Path, monkeypatch) -> None:
             "layer": "l1",
             "title": "Archive summary",
             "text": "archive text",
+            "tags": ["archive", "agent:openclaw"],
             "source": {"kind": "markdown_file", "relativePath": "archive/doc.md"},
         },
     ).raise_for_status()
@@ -539,7 +583,7 @@ def test_app_can_browse_record_tree(tmp_path: Path, monkeypatch) -> None:
     tree = client.post(
         "/v1/records/tree",
         headers=admin_headers,
-        json={"tenantId": tenant["id"], "partitions": ["memory"]},
+        json={"tenantId": tenant["id"], "partitions": ["memory"], "tags": ["archive"]},
     )
     assert tree.status_code == 200
     assert tree.json()["items"][0]["name"] in {"archive"}
