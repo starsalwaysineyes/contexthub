@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 
@@ -33,6 +34,9 @@ def main() -> None:
     import_markdown.add_argument("--prompt-preset", default="archive_and_memory")
     import_markdown.add_argument("--derive-mode", choices=["sync", "async"], default="sync")
     import_markdown.add_argument("--type", dest="record_type", default="resource")
+    import_markdown.add_argument("--source-kind", default="markdown_file")
+    import_markdown.add_argument("--relative-path-prefix", default="")
+    import_markdown.add_argument("--metadata-json", default="{}")
     import_markdown.add_argument("--tag", action="append", default=[])
     import_markdown.add_argument("--dry-run", action="store_true")
 
@@ -64,6 +68,9 @@ def main() -> None:
             prompt_preset=args.prompt_preset,
             derive_mode=args.derive_mode,
             record_type=args.record_type,
+            source_kind=args.source_kind,
+            relative_path_prefix=args.relative_path_prefix or None,
+            metadata=json.loads(args.metadata_json),
             dry_run=args.dry_run,
             tags=tuple(args.tag),
         )

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from contexthub.importer import (
     ImportMarkdownOptions,
+    build_effective_relative_path,
     build_import_payload,
     extract_markdown_title,
     import_markdown_tree,
@@ -34,6 +35,11 @@ def test_make_file_idempotency_key_is_stable() -> None:
     assert left == right
 
 
+def test_build_effective_relative_path_applies_prefix() -> None:
+    assert build_effective_relative_path("daily/2026-03-14.md", None) == "daily/2026-03-14.md"
+    assert build_effective_relative_path("daily/2026-03-14.md", "memory") == "memory/daily/2026-03-14.md"
+
+
 def test_import_markdown_tree_builds_expected_payload(tmp_path: Path) -> None:
     root = tmp_path / "notes"
     root.mkdir()
@@ -48,6 +54,11 @@ def test_import_markdown_tree_builds_expected_payload(tmp_path: Path) -> None:
         layer="l1",
         root=root,
         derive_layers=("l0",),
+        prompt_preset="memory_only",
+        record_type="summary",
+        source_kind="local_file",
+        relative_path_prefix="migration/archive",
+        metadata={"preset": "archive"},
         tags=("imported",),
     )
     client = RecordingClient()
@@ -58,9 +69,15 @@ def test_import_markdown_tree_builds_expected_payload(tmp_path: Path) -> None:
     assert len(client.payloads) == 1
     payload = client.payloads[0]
     assert payload["title"] == "Imported Note"
+    assert payload["type"] == "summary"
     assert payload["targetLayer"] == "l1"
+    assert payload["source"]["kind"] == "local_file"
+    assert payload["source"]["relativePath"] == "migration/archive/example.md"
     assert payload["derive"]["emitLayers"] == ["l0"]
-    assert payload["metadata"]["relativePath"] == "example.md"
+    assert payload["derive"]["promptPreset"] == "memory_only"
+    assert payload["metadata"]["relativePath"] == "migration/archive/example.md"
+    assert payload["metadata"]["originalRelativePath"] == "example.md"
+    assert payload["metadata"]["preset"] == "archive"
 
 
 def test_build_import_payload_dry_run_shape(tmp_path: Path) -> None:
@@ -83,4 +100,5 @@ def test_build_import_payload_dry_run_shape(tmp_path: Path) -> None:
 
     assert payload["title"] == "log"
     assert payload["content"]["kind"] == "inline_text"
+    assert payload["source"]["relativePath"] == "log.md"
     assert payload["derive"]["enabled"] is False

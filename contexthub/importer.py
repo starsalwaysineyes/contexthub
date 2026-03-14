@@ -25,6 +25,9 @@ class ImportMarkdownOptions:
     prompt_preset: str = "archive_and_memory"
     derive_mode: str = "sync"
     record_type: str = "resource"
+    source_kind: str = "markdown_file"
+    relative_path_prefix: str | None = None
+    metadata: dict[str, object] | None = None
     dry_run: bool = False
     tags: tuple[str, ...] = ()
 
@@ -45,11 +48,24 @@ def discover_markdown_files(root: Path) -> list[Path]:
     return sorted(path for path in root.rglob("*.md") if path.is_file())
 
 
+def build_effective_relative_path(relative_path: str, prefix: str | None) -> str:
+    normalized_prefix = (prefix or "").strip().strip("/")
+    return relative_path if not normalized_prefix else f"{normalized_prefix}/{relative_path}"
+
+
 def build_import_payload(path: Path, *, root: Path, options: ImportMarkdownOptions) -> dict:
     relative_path = path.relative_to(root).as_posix()
+    effective_relative_path = build_effective_relative_path(relative_path, options.relative_path_prefix)
     content = path.read_text(encoding="utf-8")
     title = extract_markdown_title(content, path.stem)
     derive_enabled = bool(options.derive_layers)
+    metadata = {
+        "importJob": "markdown",
+        "relativePath": effective_relative_path,
+        **(options.metadata or {}),
+    }
+    if effective_relative_path != relative_path:
+        metadata["originalRelativePath"] = relative_path
 
     return {
         "tenantId": options.tenant_id,
@@ -62,16 +78,13 @@ def build_import_payload(path: Path, *, root: Path, options: ImportMarkdownOptio
             "text": content,
         },
         "source": {
-            "kind": "markdown_file",
+            "kind": options.source_kind,
             "path": str(path),
-            "relativePath": relative_path,
+            "relativePath": effective_relative_path,
         },
         "tags": list(options.tags),
-        "metadata": {
-            "importJob": "markdown",
-            "relativePath": relative_path,
-        },
-        "idempotencyKey": make_file_idempotency_key(relative_path, options.layer),
+        "metadata": metadata,
+        "idempotencyKey": make_file_idempotency_key(effective_relative_path, options.layer),
         "derive": {
             "enabled": derive_enabled,
             "mode": options.derive_mode,

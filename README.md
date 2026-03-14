@@ -52,6 +52,9 @@ uv run python -m contexthub import-markdown \
   --partition-key project-openclaw \
   --layer l1 \
   --root /path/to/markdown/tree \
+  --source-kind markdown_file \
+  --relative-path-prefix archive \
+  --metadata-json '{"migrationPreset":"archive"}' \
   --dry-run
 ```
 
@@ -134,6 +137,7 @@ GitHub Actions runs the same secret scan and pytest on every push/PR.
 - [x] Add first-pass tree/path browse API (`POST /v1/records/tree`)
 - [x] Add first-pass tag filters across query/grep/tree for multi-agent collaboration rules
 - [ ] Add generic file/session-oriented upload, get, and update semantics for explicit `L0` / `L1` / `L2` targeting
+- [x] Make migration import presets richer with explicit `recordType` / `sourceKind` / `relativePathPrefix` / `promptPreset` / `metadata` mapping
 - [ ] Strengthen retrieval into a more file-system-like experience: cross-file hits, explicit cross-partition search, and multi-hit results for agent workflows
 - [ ] Record a future `queryTask` / agentic-search workflow where the service can perform retrieval + extraction for the caller (idea only, not in current scope)
 - [ ] Import selected local materials to the test server and spot-check mapping quality
