@@ -17,6 +17,7 @@ from contexthub.schemas import (
     CreateTenantRequest,
     GrepRequest,
     ImportResourceRequest,
+    ListRecordsRequest,
     QueryRequest,
     RegisterAgentRequest,
     UpdateRecordRequest,
@@ -423,6 +424,123 @@ class HubService:
                 {"lineNumber": start_index + index + 1, "text": text}
                 for index, text in enumerate(selected)
             ],
+        }
+
+    def list_records(
+        self,
+        payload: ListRecordsRequest,
+        *,
+        partition_layer_rules: dict[str, set[str]] | None = None,
+    ) -> dict[str, Any]:
+        with self.store.connection() as conn:
+            self._assert_tenant(conn, payload.tenant_id)
+            partition_keys = [normalize_key(item) for item in payload.partitions if item.strip()]
+            if not partition_keys:
+                partition_rows = conn.execute(
+                    "SELECT key FROM partitions WHERE tenant_id = ?",
+                    (payload.tenant_id,),
+                ).fetchall()
+                partition_keys = [str(row["key"]) for row in partition_rows]
+
+            if not partition_keys:
+                return {
+                    "items": [],
+                    "page": {
+                        "offset": max(payload.offset, 0),
+                        "limit": max(min(payload.limit, 200), 1),
+                        "returned": 0,
+                        "totalMatched": 0,
+                        "hasMore": False,
+                    },
+                }
+
+            types = [normalize_key(item) for item in payload.types if item.strip()]
+            layers = [normalize_key(item) for item in payload.layers if item.strip()]
+            clauses = ["tenant_id = ?"]
+            parameters: list[Any] = [payload.tenant_id]
+
+            partition_placeholders = ", ".join("?" for _ in partition_keys)
+            clauses.append(f"partition_key IN ({partition_placeholders})")
+            parameters.extend(partition_keys)
+
+            if types:
+                type_placeholders = ", ".join("?" for _ in types)
+                clauses.append(f"type IN ({type_placeholders})")
+                parameters.extend(types)
+
+            if layers:
+                layer_placeholders = ", ".join("?" for _ in layers)
+                clauses.append(f"layer IN ({layer_placeholders})")
+                parameters.extend(layers)
+
+            rows = conn.execute(
+                f"SELECT * FROM records WHERE {' AND '.join(clauses)} ORDER BY updated_at DESC, created_at DESC",
+                parameters,
+            ).fetchall()
+
+        tag_filters = {normalize_key(item) for item in payload.tags if item.strip()}
+        title_contains = (payload.title_contains or "").strip().lower()
+        source_kind = normalize_key(payload.source_kind) if payload.source_kind else None
+        source_path_prefix = (payload.source_path_prefix or "").strip().lower()
+
+        filtered: list[dict[str, Any]] = []
+        for row in rows:
+            partition_key = str(row["partition_key"])
+            if partition_layer_rules is not None:
+                allowed_layers = partition_layer_rules.get(partition_key)
+                if not allowed_layers or str(row["layer"]) not in allowed_layers:
+                    continue
+
+            record = self._serialize_record(dict(row))
+            source = record.get("source") if isinstance(record.get("source"), dict) else {}
+            record_tags = {normalize_key(item) for item in record.get("tags", [])}
+            source_paths = [
+                str(source.get("path", "")).lower(),
+                str(source.get("relativePath", "")).lower(),
+            ]
+
+            if tag_filters and not (record_tags & tag_filters):
+                continue
+            if title_contains and title_contains not in record["title"].lower():
+                continue
+            if source_kind and normalize_key(str(source.get("kind", ""))) != source_kind:
+                continue
+            if source_path_prefix and not any(path.startswith(source_path_prefix) for path in source_paths if path):
+                continue
+
+            lines = record["text"].splitlines()
+            filtered.append(
+                {
+                    "id": record["id"],
+                    "tenantId": record["tenantId"],
+                    "partitionKey": record["partitionKey"],
+                    "type": record["type"],
+                    "layer": record["layer"],
+                    "title": record["title"],
+                    "manualSummary": record["manualSummary"],
+                    "tags": record["tags"],
+                    "source": record["source"],
+                    "lineCount": len(lines),
+                    "textPreview": record["text"][:240],
+                    "importance": record["importance"],
+                    "pinned": record["pinned"],
+                    "createdAt": record["createdAt"],
+                    "updatedAt": record["updatedAt"],
+                }
+            )
+
+        offset = max(payload.offset, 0)
+        limit = max(min(payload.limit, 200), 1)
+        items = filtered[offset : offset + limit]
+        return {
+            "items": items,
+            "page": {
+                "offset": offset,
+                "limit": limit,
+                "returned": len(items),
+                "totalMatched": len(filtered),
+                "hasMore": offset + len(items) < len(filtered),
+            },
         }
 
     def grep_records(

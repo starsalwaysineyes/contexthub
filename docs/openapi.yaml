@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ContextHub API
-  version: 0.9.0
+  version: 0.10.0
   description: Agent-native context backend API.
 servers:
   - url: http://127.0.0.1:4040
@@ -238,6 +238,39 @@ components:
           maximum: 5
         pinned:
           type: boolean
+
+    ListRecordsRequest:
+      type: object
+      required: [tenantId]
+      properties:
+        tenantId:
+          type: string
+        partitions:
+          type: array
+          items:
+            type: string
+        types:
+          type: array
+          items:
+            type: string
+        layers:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecordLayer"
+        tags:
+          type: array
+          items:
+            type: string
+        titleContains:
+          type: string
+        sourceKind:
+          type: string
+        sourcePathPrefix:
+          type: string
+        offset:
+          type: integer
+        limit:
+          type: integer
 
     GrepRequest:
       type: object
@@ -662,6 +695,21 @@ paths:
           schema:
             type: integer
             default: 80
+      responses:
+        "200":
+          description: OK
+
+  /v1/records/list:
+    post:
+      security:
+        - bearerAuth: []
+      summary: List records with structural filters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ListRecordsRequest"
       responses:
         "200":
           description: OK

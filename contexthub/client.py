@@ -44,6 +44,9 @@ class ContextHubClient:
     def read_record_lines(self, record_id: str, from_line: int = 1, limit: int = 80) -> dict[str, Any]:
         return self._request("GET", f"/v1/records/{record_id}/lines?from_line={from_line}&limit={limit}")
 
+    def list_records(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/v1/records/list", payload)
+
     def grep_records(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", "/v1/records/grep", payload)
 

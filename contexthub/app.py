@@ -15,6 +15,7 @@ from contexthub.schemas import (
     GrepRequest,
     HealthResponse,
     ImportResourceRequest,
+    ListRecordsRequest,
     QueryRequest,
     RegisterAgentRequest,
     UpdateRecordRequest,
@@ -40,7 +41,7 @@ def create_app() -> FastAPI:
     )
     security = SecurityManager(store, config.auth)
 
-    app = FastAPI(title="ContextHub API", version="0.9.0")
+    app = FastAPI(title="ContextHub API", version="0.10.0")
 
     def get_auth(request: Request) -> AuthContext:
         return security.authenticate_request(request)
@@ -122,6 +123,18 @@ def create_app() -> FastAPI:
         record = service.get_record(record_id)
         security.ensure_partition_read(auth, record["tenantId"], record["partitionKey"])
         return service.read_record_lines(record_id, line_start=from_line, line_limit=limit)
+
+    @app.post("/v1/records/list")
+    def list_records(payload: ListRecordsRequest, auth: AuthContext = Depends(get_auth)) -> dict:
+        security.require_tenant_match(auth, payload.tenant_id)
+        requested_partitions = [partition.strip().lower() for partition in payload.partitions if partition.strip()]
+        scoped_partitions, partition_layer_rules = security.query_scope(
+            auth,
+            payload.tenant_id,
+            requested_partitions,
+        )
+        scoped_payload = payload.model_copy(update={"partitions": scoped_partitions})
+        return service.list_records(scoped_payload, partition_layer_rules=partition_layer_rules)
 
     @app.post("/v1/records/grep")
     def grep_records(payload: GrepRequest, auth: AuthContext = Depends(get_auth)) -> dict:

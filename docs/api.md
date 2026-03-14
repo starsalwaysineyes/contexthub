@@ -107,6 +107,29 @@ Notes:
 - this is the first file-like read API for agents that want bounded reads instead of whole-record fetches
 - response includes `totalLines`, `returnedLines`, and `hasMore`
 
+## `POST /v1/records/list`
+
+List records with structural filters instead of semantic search.
+
+Body fields:
+
+- `tenantId`
+- `partitions`
+- `types`
+- `layers`
+- `tags`
+- `titleContains`
+- `sourceKind`
+- `sourcePathPrefix`
+- `offset`
+- `limit`
+
+Notes:
+
+- intended for browse/find/list workflows when the caller does not yet know a `recordId`
+- returns lightweight record summaries with `textPreview`, `lineCount`, and source metadata
+- this is the first browse-style API toward a more file-system-like experience
+
 ## `POST /v1/records/grep`
 
 Search record text line-by-line and return line numbers.

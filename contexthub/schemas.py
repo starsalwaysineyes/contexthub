@@ -99,6 +99,19 @@ class GrepRequest(BaseModel):
     after_context: int = Field(default=0, alias="afterContext")
 
 
+class ListRecordsRequest(BaseModel):
+    tenant_id: str = Field(alias="tenantId")
+    partitions: list[str] = Field(default_factory=list)
+    types: list[str] = Field(default_factory=list)
+    layers: list[RecordLayer] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    title_contains: str | None = Field(default=None, alias="titleContains")
+    source_kind: str | None = Field(default=None, alias="sourceKind")
+    source_path_prefix: str | None = Field(default=None, alias="sourcePathPrefix")
+    offset: int = 0
+    limit: int = 50
+
+
 class MemoryEntry(BaseModel):
     type: str = "memory"
     layer: RecordLayer = "l0"
