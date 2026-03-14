@@ -115,15 +115,16 @@ class Flaky429Abstractor(FakeAbstractor):
         )
 
 
-class ImmediateThread:
-    def __init__(self, *, target=None, args=(), kwargs=None, daemon=None, name=None) -> None:
-        self.target = target
-        self.args = args
-        self.kwargs = kwargs or {}
+class ImmediateExecutor:
+    def __init__(self, max_workers=None, thread_name_prefix=None) -> None:
+        self.max_workers = max_workers
+        self.thread_name_prefix = thread_name_prefix
 
-    def start(self) -> None:
-        if self.target is not None:
-            self.target(*self.args, **self.kwargs)
+    def submit(self, fn, *args, **kwargs) -> None:
+        fn(*args, **kwargs)
+
+    def shutdown(self, wait=True, cancel_futures=False) -> None:
+        return None
 
 
 def build_service(tmp_path: Path, abstractor=None) -> HubService:
@@ -145,6 +146,8 @@ def build_service(tmp_path: Path, abstractor=None) -> HubService:
             model="fake-abstraction",
             timeout_seconds=30.0,
         ),
+        derivation_async_workers=2,
+        derivation_max_attempts=4,
     )
     return HubService(
         store=store,
@@ -964,7 +967,7 @@ def test_app_startup_recovers_pending_derivation_jobs(tmp_path: Path, monkeypatc
     monkeypatch.setenv("CONTEXT_HUB_ENABLE_RERANK", "false")
     monkeypatch.setenv("CONTEXT_HUB_ENABLE_AUTH", "false")
     monkeypatch.setattr(app_module, "LiteLLMAbstractionClient", lambda config: FakeAbstractor())
-    monkeypatch.setattr(app_module.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(app_module, "ThreadPoolExecutor", ImmediateExecutor)
 
     app = create_app()
     with TestClient(app) as client:
@@ -981,7 +984,7 @@ def test_app_can_run_async_derivation_job_and_fetch_links(tmp_path: Path, monkey
     monkeypatch.setenv("CONTEXT_HUB_ENABLE_AUTH", "true")
     monkeypatch.setenv("CONTEXT_HUB_ADMIN_TOKEN", "admin-secret")
     monkeypatch.setattr(app_module, "LiteLLMAbstractionClient", lambda config: FakeAbstractor())
-    monkeypatch.setattr(app_module.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(app_module, "ThreadPoolExecutor", ImmediateExecutor)
     app = create_app()
     client = TestClient(app)
     admin_headers = {"Authorization": "Bearer admin-secret"}

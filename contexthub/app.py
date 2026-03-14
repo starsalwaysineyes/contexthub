@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -45,26 +45,30 @@ def create_app() -> FastAPI:
         config=config,
     )
     security = SecurityManager(store, config.auth)
+    derivation_executor = ThreadPoolExecutor(
+        max_workers=config.derivation_async_workers,
+        thread_name_prefix="contexthub-derive",
+    )
+
+    def queue_derivation_job(job_id: str) -> None:
+        derivation_executor.submit(
+            service.run_derivation_job,
+            job_id,
+            max_attempts=config.derivation_max_attempts,
+        )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         service.recover_pending_derivation_jobs(
-            max_attempts=2,
-            schedule_job=lambda job_id: launch_derivation_job(job_id, max_attempts=2),
+            max_attempts=config.derivation_max_attempts,
+            schedule_job=queue_derivation_job,
         )
-        yield
+        try:
+            yield
+        finally:
+            derivation_executor.shutdown(wait=False, cancel_futures=False)
 
     app = FastAPI(title="ContextHub API", version="0.12.0", lifespan=lifespan)
-
-    def launch_derivation_job(job_id: str, *, max_attempts: int = 2) -> None:
-        worker = threading.Thread(
-            target=service.run_derivation_job,
-            args=(job_id,),
-            kwargs={"max_attempts": max_attempts},
-            daemon=True,
-            name=f"contexthub-derive-{job_id}",
-        )
-        worker.start()
 
     def get_auth(request: Request) -> AuthContext:
         return security.authenticate_request(request)
@@ -249,11 +253,7 @@ def create_app() -> FastAPI:
         security.ensure_partition_write(auth, payload.tenant_id, payload.partition_key)
         return service.import_resource(
             payload,
-            schedule_async=lambda job_id: background_tasks.add_task(
-                launch_derivation_job,
-                job_id,
-                max_attempts=2,
-            ),
+            schedule_async=lambda job_id: background_tasks.add_task(queue_derivation_job, job_id),
         )
 
     @app.get("/v1/derivation-jobs/{job_id}")

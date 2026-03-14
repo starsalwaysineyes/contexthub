@@ -49,6 +49,8 @@ class AppConfig:
     rerank: ProviderConfig
     auth: AuthConfig
     abstraction: AbstractionConfig
+    derivation_async_workers: int
+    derivation_max_attempts: int
 
 
 def _get_bool(name: str, default: bool) -> bool:
@@ -111,4 +113,6 @@ def load_config() -> AppConfig:
             model=os.environ.get("CONTEXT_HUB_ABSTRACTION_MODEL", "gpt-5.4"),
             timeout_seconds=_get_float("CONTEXT_HUB_ABSTRACTION_TIMEOUT_SECONDS", 60.0),
         ),
+        derivation_async_workers=max(1, _get_int("CONTEXT_HUB_DERIVATION_ASYNC_WORKERS", 2)),
+        derivation_max_attempts=max(1, _get_int("CONTEXT_HUB_DERIVATION_MAX_ATTEMPTS", 4)),
     )
