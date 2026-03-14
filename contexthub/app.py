@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Request
@@ -44,7 +46,25 @@ def create_app() -> FastAPI:
     )
     security = SecurityManager(store, config.auth)
 
-    app = FastAPI(title="ContextHub API", version="0.12.0")
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        service.recover_pending_derivation_jobs(
+            max_attempts=2,
+            schedule_job=lambda job_id: launch_derivation_job(job_id, max_attempts=2),
+        )
+        yield
+
+    app = FastAPI(title="ContextHub API", version="0.12.0", lifespan=lifespan)
+
+    def launch_derivation_job(job_id: str, *, max_attempts: int = 2) -> None:
+        worker = threading.Thread(
+            target=service.run_derivation_job,
+            args=(job_id,),
+            kwargs={"max_attempts": max_attempts},
+            daemon=True,
+            name=f"contexthub-derive-{job_id}",
+        )
+        worker.start()
 
     def get_auth(request: Request) -> AuthContext:
         return security.authenticate_request(request)
@@ -230,7 +250,7 @@ def create_app() -> FastAPI:
         return service.import_resource(
             payload,
             schedule_async=lambda job_id: background_tasks.add_task(
-                service.run_derivation_job,
+                launch_derivation_job,
                 job_id,
                 max_attempts=2,
             ),

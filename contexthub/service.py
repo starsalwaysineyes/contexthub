@@ -760,6 +760,39 @@ class HubService:
             raise HubError(f"Unknown derivation job: {job_id}")
         return self._serialize_derivation_job(dict(row))
 
+    def recover_pending_derivation_jobs(
+        self,
+        *,
+        max_attempts: int = 2,
+        schedule_job: Callable[[str], None] | None = None,
+    ) -> dict[str, Any]:
+        with self.store.connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM derivation_jobs WHERE status IN ('queued', 'running') ORDER BY created_at, id"
+            ).fetchall()
+
+        recovered_job_ids: list[str] = []
+        for row in rows:
+            job = dict(row)
+            self._update_derivation_job(
+                job["id"],
+                status="queued",
+                effective_mode=job.get("effective_mode") or job["mode"],
+                error_message=job.get("error_message"),
+                metadata={
+                    "recoveredFromStartup": True,
+                    "recoverySourceStatus": job["status"],
+                },
+                finished_at=None,
+            )
+            if schedule_job is None:
+                self.run_derivation_job(job["id"], max_attempts=max_attempts)
+            else:
+                schedule_job(job["id"])
+            recovered_job_ids.append(job["id"])
+
+        return {"count": len(recovered_job_ids), "jobIds": recovered_job_ids}
+
     def list_record_links(self, record_id: str) -> list[dict[str, Any]]:
         with self.store.connection() as conn:
             rows = conn.execute(

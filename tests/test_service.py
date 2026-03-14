@@ -115,6 +115,17 @@ class Flaky429Abstractor(FakeAbstractor):
         )
 
 
+class ImmediateThread:
+    def __init__(self, *, target=None, args=(), kwargs=None, daemon=None, name=None) -> None:
+        self.target = target
+        self.args = args
+        self.kwargs = kwargs or {}
+
+    def start(self) -> None:
+        if self.target is not None:
+            self.target(*self.args, **self.kwargs)
+
+
 def build_service(tmp_path: Path, abstractor=None) -> HubService:
     database_path = tmp_path / "contexthub.db"
     store = SQLiteStore(database_path)
@@ -631,6 +642,56 @@ def test_run_derivation_job_retries_retryable_errors(tmp_path: Path, monkeypatch
     assert abstractor.calls == 3
 
 
+def test_recover_pending_derivation_jobs_runs_queued_and_running_jobs(tmp_path: Path) -> None:
+    service = build_service(tmp_path)
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo-recover", name="Demo Recover"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+
+    queued = service.import_resource(
+        ImportResourceRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="resource",
+            targetLayer="l2",
+            title="Queued note",
+            content={"kind": "inline_text", "text": "queued body"},
+            derive={"enabled": True, "mode": "async", "emitLayers": ["l0"], "provider": "litellm"},
+        ),
+        schedule_async=lambda _: None,
+    )
+    running = service.import_resource(
+        ImportResourceRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="resource",
+            targetLayer="l2",
+            title="Running note",
+            content={"kind": "inline_text", "text": "running body"},
+            derive={"enabled": True, "mode": "async", "emitLayers": ["l0"], "provider": "litellm"},
+        ),
+        schedule_async=lambda _: None,
+    )
+    service._update_derivation_job(
+        running["derivation"]["job"]["id"],
+        status="running",
+        effective_mode="async",
+        metadata={"attemptCount": 1},
+        finished_at=None,
+    )
+
+    summary = service.recover_pending_derivation_jobs(max_attempts=2)
+
+    assert summary["count"] == 2
+    queued_job = service.get_derivation_job(queued["derivation"]["job"]["id"])
+    running_job = service.get_derivation_job(running["derivation"]["job"]["id"])
+    assert queued_job["status"] == "completed"
+    assert queued_job["metadata"]["recoveredFromStartup"] is True
+    assert queued_job["metadata"]["recoverySourceStatus"] == "queued"
+    assert running_job["status"] == "completed"
+    assert running_job["metadata"]["recoveredFromStartup"] is True
+    assert running_job["metadata"]["recoverySourceStatus"] == "running"
+
+
 def test_import_resource_accepts_string_importance_from_derive(tmp_path: Path) -> None:
     service = build_service(tmp_path, abstractor=StringImportanceAbstractor())
     tenant = service.create_tenant(CreateTenantRequest(slug="demo-importance", name="Demo Importance"))
@@ -877,6 +938,40 @@ def test_app_can_get_and_update_record(tmp_path: Path, monkeypatch) -> None:
     assert patched.status_code == 200
     assert patched.json()["title"] == "Updated"
     assert patched.json()["layer"] == "l1"
+
+
+def test_app_startup_recovers_pending_derivation_jobs(tmp_path: Path, monkeypatch) -> None:
+    database_path = tmp_path / "contexthub.db"
+    service = build_service(tmp_path, abstractor=FakeAbstractor())
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo-startup", name="Demo Startup"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+    queued = service.import_resource(
+        ImportResourceRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="resource",
+            targetLayer="l2",
+            title="Startup queued",
+            content={"kind": "inline_text", "text": "startup body"},
+            derive={"enabled": True, "mode": "async", "emitLayers": ["l0"], "provider": "litellm"},
+        ),
+        schedule_async=lambda _: None,
+    )
+    job_id = queued["derivation"]["job"]["id"]
+
+    monkeypatch.setenv("CONTEXT_HUB_DATABASE_PATH", str(database_path))
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_EMBEDDINGS", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_RERANK", "false")
+    monkeypatch.setenv("CONTEXT_HUB_ENABLE_AUTH", "false")
+    monkeypatch.setattr(app_module, "LiteLLMAbstractionClient", lambda config: FakeAbstractor())
+    monkeypatch.setattr(app_module.threading, "Thread", ImmediateThread)
+
+    app = create_app()
+    with TestClient(app) as client:
+        response = client.get(f"/v1/derivation-jobs/{job_id}")
+        assert response.status_code == 200
+        assert response.json()["status"] == "completed"
+        assert response.json()["metadata"]["recoveredFromStartup"] is True
 
 
 def test_app_can_run_async_derivation_job_and_fetch_links(tmp_path: Path, monkeypatch) -> None:
