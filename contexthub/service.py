@@ -860,8 +860,8 @@ class HubService:
 
             if idempotency_key:
                 existing = conn.execute(
-                    "SELECT * FROM records WHERE tenant_id = ? AND idempotency_key = ?",
-                    (payload.tenant_id, idempotency_key),
+                    "SELECT * FROM records WHERE tenant_id = ? AND partition_key = ? AND idempotency_key = ?",
+                    (payload.tenant_id, partition_key, idempotency_key),
                 ).fetchone()
                 if existing is not None:
                     return self._serialize_record(dict(existing))

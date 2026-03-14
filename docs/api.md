@@ -60,6 +60,7 @@ Notes:
 - the body is chunked automatically
 - embeddings are attached if the provider is configured
 - `idempotencyKey` is the simplest way to avoid duplicate writes from multiple agents
+- idempotency is scoped to `tenantId + partitionKey + idempotencyKey`, so the same source material can still be migrated into a different partition deliberately
 - when auth is enabled, caller must have `canWrite=true` on the target partition
 
 ## `GET /v1/records/{recordId}`

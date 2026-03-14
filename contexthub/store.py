@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS records (
   idempotency_key TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  UNIQUE (tenant_id, idempotency_key),
+  UNIQUE (tenant_id, partition_key, idempotency_key),
   FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE
 );
 
@@ -181,9 +181,68 @@ class SQLiteStore:
         if "layer" not in record_columns:
             conn.execute("ALTER TABLE records ADD COLUMN layer TEXT NOT NULL DEFAULT 'l1'")
 
+        if not self._records_idempotency_is_partition_scoped(conn):
+            self._rebuild_records_table_with_partition_scoped_idempotency(conn)
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_records_tenant_partition ON records (tenant_id, partition_key)"
+        )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_records_tenant_partition_layer ON records (tenant_id, partition_key, layer)"
         )
+
+    def _records_idempotency_is_partition_scoped(self, conn: sqlite3.Connection) -> bool:
+        indexes = conn.execute("PRAGMA index_list(records)").fetchall()
+        for index in indexes:
+            if not index["unique"]:
+                continue
+            columns = [
+                row["name"]
+                for row in conn.execute(f"PRAGMA index_info({index['name']!r})").fetchall()
+            ]
+            if columns == ["tenant_id", "partition_key", "idempotency_key"]:
+                return True
+        return False
+
+    def _rebuild_records_table_with_partition_scoped_idempotency(self, conn: sqlite3.Connection) -> None:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.executescript(
+            """
+            CREATE TABLE records_new (
+              id TEXT PRIMARY KEY,
+              tenant_id TEXT NOT NULL,
+              partition_key TEXT NOT NULL,
+              type TEXT NOT NULL,
+              layer TEXT NOT NULL DEFAULT 'l1',
+              title TEXT NOT NULL,
+              text TEXT NOT NULL,
+              source TEXT,
+              tags TEXT NOT NULL DEFAULT '[]',
+              metadata TEXT NOT NULL DEFAULT '{}',
+              manual_summary TEXT NOT NULL DEFAULT '',
+              importance REAL NOT NULL DEFAULT 0,
+              pinned INTEGER NOT NULL DEFAULT 0,
+              idempotency_key TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE (tenant_id, partition_key, idempotency_key),
+              FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE
+            );
+
+            INSERT INTO records_new (
+              id, tenant_id, partition_key, type, layer, title, text, source, tags, metadata,
+              manual_summary, importance, pinned, idempotency_key, created_at, updated_at
+            )
+            SELECT
+              id, tenant_id, partition_key, type, layer, title, text, source, tags, metadata,
+              manual_summary, importance, pinned, idempotency_key, created_at, updated_at
+            FROM records;
+
+            DROP TABLE records;
+            ALTER TABLE records_new RENAME TO records;
+            """
+        )
+        conn.execute("PRAGMA foreign_keys = ON")
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:

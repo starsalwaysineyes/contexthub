@@ -533,6 +533,51 @@ def test_import_resource_can_derive_l1_and_l0(tmp_path: Path) -> None:
     assert all(link["metadata"]["jobId"] == replay["derivation"]["job"]["id"] for link in replay_links)
 
 
+def test_record_idempotency_is_partition_scoped(tmp_path: Path) -> None:
+    service = build_service(tmp_path)
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo-idempotency", name="Demo Idempotency"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="project-a", name="Project A"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+
+    first = service.create_record(
+        CreateRecordRequest(
+            tenantId=tenant["id"],
+            partitionKey="project-a",
+            type="memory",
+            layer="l0",
+            title="Shared note",
+            text="same idempotency key different partition",
+            idempotencyKey="shared-key",
+        )
+    )
+    replay_same_partition = service.create_record(
+        CreateRecordRequest(
+            tenantId=tenant["id"],
+            partitionKey="project-a",
+            type="memory",
+            layer="l0",
+            title="Shared note",
+            text="same idempotency key different partition",
+            idempotencyKey="shared-key",
+        )
+    )
+    second_partition = service.create_record(
+        CreateRecordRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="memory",
+            layer="l0",
+            title="Shared note",
+            text="same idempotency key different partition",
+            idempotencyKey="shared-key",
+        )
+    )
+
+    assert replay_same_partition["id"] == first["id"]
+    assert second_partition["id"] != first["id"]
+    assert second_partition["partitionKey"] == "memory"
+
+
 def test_import_resource_accepts_string_importance_from_derive(tmp_path: Path) -> None:
     service = build_service(tmp_path, abstractor=StringImportanceAbstractor())
     tenant = service.create_tenant(CreateTenantRequest(slug="demo-importance", name="Demo Importance"))
