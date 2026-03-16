@@ -94,6 +94,35 @@ Notes:
 - if `text` changes, chunks are rebuilt and embeddings are recalculated when available
 - partition/tenant reassignment is intentionally not part of this first patch API
 
+## `POST /v1/records/{recordId}/edit`
+
+Apply one targeted text replacement on an existing record.
+
+Body fields:
+
+- `matchText` (required)
+- `replaceText` (required)
+- `replaceAll` (optional, default `false`)
+
+Notes:
+
+- fails when `matchText` is not found
+- fails on ambiguous multi-match edits unless `replaceAll=true`
+- internally persists through the same record update path, so chunk/embedding refresh behavior matches `PATCH` updates
+
+## `POST /v1/records/{recordId}/apply_patch`
+
+Apply a unified patch text block to one existing record.
+
+Body fields:
+
+- `patch` (required): unified diff style text (`*** Begin Patch` / `@@` hunks)
+
+Notes:
+
+- patch hunks are matched against the current record text; non-matching or ambiguous hunks fail fast
+- successful patch application persists through the same record update path, so chunk/embedding refresh behavior matches `PATCH` updates
+
 ## `GET /v1/records/{recordId}/lines`
 
 Read one record as numbered lines.

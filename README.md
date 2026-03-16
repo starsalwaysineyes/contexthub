@@ -72,6 +72,8 @@ Default endpoints:
 - `POST /v1/records`
 - `GET /v1/records/{recordId}`
 - `PATCH /v1/records/{recordId}`
+- `POST /v1/records/{recordId}/edit`
+- `POST /v1/records/{recordId}/apply_patch`
 - `GET /v1/records/{recordId}/lines`
 - `POST /v1/records/list`
 - `POST /v1/records/tree`

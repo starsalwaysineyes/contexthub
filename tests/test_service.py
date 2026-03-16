@@ -9,11 +9,13 @@ import contexthub.app as app_module
 from contexthub.app import create_app
 from contexthub.config import AbstractionConfig, AppConfig, AuthConfig, ProviderConfig, RetrievalConfig
 from contexthub.schemas import (
+    ApplyPatchRequest,
+    BrowseTreeRequest,
     CommitSessionRequest,
     CreatePartitionRequest,
     CreateRecordRequest,
     CreateTenantRequest,
-    BrowseTreeRequest,
+    EditRecordTextRequest,
     GrepRequest,
     ImportResourceRequest,
     ListDerivationJobsRequest,
@@ -476,6 +478,70 @@ def test_update_record_rechunks_and_changes_layer(tmp_path: Path) -> None:
     )
     assert len(result["items"]) == 1
     assert result["items"][0]["recordId"] == record["id"]
+
+
+def test_edit_record_text_replaces_exact_match(tmp_path: Path) -> None:
+    service = build_service(tmp_path)
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo-edit", name="Demo Edit"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+
+    record = service.create_record(
+        CreateRecordRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="memory",
+            layer="l1",
+            title="Operator note",
+            text="alpha\nbeta\ngamma",
+        )
+    )
+
+    edited = service.edit_record_text(
+        record["id"],
+        EditRecordTextRequest(matchText="beta", replaceText="beta updated"),
+    )
+
+    assert edited["edit"]["matched"] == 1
+    assert edited["edit"]["replaced"] == 1
+    assert edited["record"]["text"] == "alpha\nbeta updated\ngamma"
+
+    reread = service.read_record_lines(record["id"], line_start=2, line_limit=1)
+    assert reread["items"][0]["text"] == "beta updated"
+
+
+def test_apply_record_patch_updates_line_block(tmp_path: Path) -> None:
+    service = build_service(tmp_path)
+    tenant = service.create_tenant(CreateTenantRequest(slug="demo-apply-patch", name="Demo Apply Patch"))
+    service.create_partition(CreatePartitionRequest(tenantId=tenant["id"], key="memory", name="Memory"))
+
+    record = service.create_record(
+        CreateRecordRequest(
+            tenantId=tenant["id"],
+            partitionKey="memory",
+            type="summary",
+            layer="l1",
+            title="Patch target",
+            text="one\ntwo\nthree\nfour",
+        )
+    )
+
+    patched = service.apply_record_patch(
+        record["id"],
+        ApplyPatchRequest(
+            patch="""*** Begin Patch
+*** Update File: ignored.md
+@@
+ one
+-two
++two updated
+ three
+*** End Patch"""
+        ),
+    )
+
+    assert patched["patch"]["hunks"] == 1
+    assert patched["patch"]["applied"][0]["startLine"] == 1
+    assert patched["record"]["text"] == "one\ntwo updated\nthree\nfour"
 
 
 def test_query_can_filter_by_tags(tmp_path: Path) -> None:
@@ -1006,6 +1072,26 @@ def test_app_can_get_and_update_record(tmp_path: Path, monkeypatch) -> None:
     assert patched.status_code == 200
     assert patched.json()["title"] == "Updated"
     assert patched.json()["layer"] == "l1"
+
+    edited = client.post(
+        f"/v1/records/{created['id']}/edit",
+        headers=admin_headers,
+        json={"matchText": "updated", "replaceText": "edited"},
+    )
+    assert edited.status_code == 200
+    assert edited.json()["record"]["text"] == "edited raw text"
+    assert edited.json()["edit"]["replaced"] == 1
+
+    apply_patch = client.post(
+        f"/v1/records/{created['id']}/apply_patch",
+        headers=admin_headers,
+        json={
+            "patch": "*** Begin Patch\n*** Update File: cloud.md\n@@\n-edited raw text\n+edited cloud text\n*** End Patch"
+        },
+    )
+    assert apply_patch.status_code == 200
+    assert apply_patch.json()["record"]["text"] == "edited cloud text"
+    assert apply_patch.json()["patch"]["hunks"] == 1
 
 
 def test_app_startup_recovers_pending_derivation_jobs(tmp_path: Path, monkeypatch) -> None:

@@ -49,7 +49,7 @@ fi"
 "${SSH[@]}" "systemctl daemon-reload && systemctl enable '$SERVICE_NAME' >/dev/null 2>&1 && systemctl restart '$SERVICE_NAME'"
 
 for ((attempt = 1; attempt <= HEALTH_RETRIES; attempt++)); do
-  if "${SSH[@]}" "curl -fsS http://127.0.0.1:4040/health"; then
+  if "${SSH[@]}" "bash -lc 'set -a; [ -f \"$REMOTE_DIR/.env\" ] && source \"$REMOTE_DIR/.env\"; curl -fsS http://127.0.0.1:${CONTEXT_HUB_PORT:-4040}/health'"; then
     exit 0
   fi
   sleep "$HEALTH_INTERVAL_SECONDS"

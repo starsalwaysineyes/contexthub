@@ -12,12 +12,14 @@ from typing import Any, Callable
 from contexthub.config import AppConfig
 from contexthub.providers import EmbeddingClient, LiteLLMAbstractionClient, RerankClient
 from contexthub.schemas import (
+    ApplyPatchRequest,
     BrowseTreeRequest,
     CommitSessionRequest,
     CreatePartitionRequest,
     CreatePrincipalRequest,
     CreateRecordRequest,
     CreateTenantRequest,
+    EditRecordTextRequest,
     GrepRequest,
     ImportResourceRequest,
     ListDerivationJobsRequest,
@@ -63,6 +65,67 @@ def text_for_chunk(record: dict[str, Any], chunk_text: str) -> str:
     return "\n\n".join(
         part for part in [record["title"], record.get("manualSummary", ""), chunk_text] if part
     )
+
+
+def _count_substring_occurrences(text: str, needle: str) -> int:
+    if not needle:
+        return 0
+    count = start = 0
+    while True:
+        index = text.find(needle, start)
+        if index < 0:
+            return count
+        count += 1
+        start = index + len(needle)
+
+
+def _parse_record_patch_hunks(patch_text: str) -> list[list[str]]:
+    hunks: list[list[str]] = []
+    current: list[str] = []
+    saw_patch_marker = False
+
+    for raw_line in patch_text.splitlines():
+        if raw_line.startswith("*** Begin Patch"):
+            saw_patch_marker = True
+            continue
+        if raw_line.startswith("*** End Patch"):
+            break
+        if raw_line.startswith(("*** Update File:", "*** Delete File:", "*** Add File:", "--- ", "+++ ")):
+            saw_patch_marker = True
+            continue
+        if raw_line.startswith("@@"):
+            saw_patch_marker = True
+            if current:
+                hunks.append(current)
+                current = []
+            continue
+        if raw_line.startswith("\\"):
+            continue
+        if raw_line.startswith((" ", "+", "-")):
+            saw_patch_marker = True
+            current.append(raw_line)
+            continue
+        if raw_line.strip() == "":
+            if current:
+                raise HubError("Invalid patch: blank lines inside hunks must keep a diff prefix")
+            continue
+        if saw_patch_marker:
+            raise HubError(f"Invalid patch line: {raw_line}")
+
+    if current:
+        hunks.append(current)
+    return hunks
+
+
+def _find_block_positions(lines: list[str], needle: list[str]) -> list[int]:
+    if not needle:
+        return []
+    positions: list[int] = []
+    max_start = len(lines) - len(needle)
+    for start in range(max_start + 1):
+        if lines[start : start + len(needle)] == needle:
+            positions.append(start)
+    return positions
 
 
 class HubService:
@@ -410,6 +473,73 @@ class HubService:
                     )
 
         return self._serialize_record(record)
+
+    def edit_record_text(self, record_id: str, payload: EditRecordTextRequest) -> dict[str, Any]:
+        record = self.get_record(record_id)
+        current_text = record["text"]
+        match_text = payload.match_text
+        if not match_text:
+            raise HubError("matchText is required")
+
+        match_count = _count_substring_occurrences(current_text, match_text)
+        if match_count == 0:
+            raise HubError("matchText not found in record text")
+        if match_count > 1 and not payload.replace_all:
+            raise HubError("matchText matched multiple locations; set replaceAll=true to update all matches")
+
+        replaced = match_count if payload.replace_all else 1
+        next_text = current_text.replace(match_text, payload.replace_text, -1 if payload.replace_all else 1)
+        updated = self.update_record(record_id, UpdateRecordRequest(text=next_text))
+        return {
+            "record": updated,
+            "edit": {
+                "matchText": match_text,
+                "replaceText": payload.replace_text,
+                "replaceAll": payload.replace_all,
+                "matched": match_count,
+                "replaced": replaced,
+            },
+        }
+
+    def apply_record_patch(self, record_id: str, payload: ApplyPatchRequest) -> dict[str, Any]:
+        record = self.get_record(record_id)
+        current_lines = record["text"].splitlines()
+        hunks = _parse_record_patch_hunks(payload.patch)
+        if not hunks:
+            raise HubError("No patch hunks found")
+
+        applied: list[dict[str, Any]] = []
+        for index, hunk in enumerate(hunks, start=1):
+            preimage = [line[1:] for line in hunk if line.startswith((" ", "-"))]
+            postimage = [line[1:] for line in hunk if line.startswith((" ", "+"))]
+            if not preimage:
+                raise HubError("Patch hunks must include at least one context or removed line")
+
+            positions = _find_block_positions(current_lines, preimage)
+            if not positions:
+                raise HubError(f"Patch hunk {index} did not match the current record text")
+            if len(positions) > 1:
+                raise HubError(f"Patch hunk {index} matched multiple locations; add more context before applying")
+
+            start = positions[0]
+            current_lines = current_lines[:start] + postimage + current_lines[start + len(preimage) :]
+            applied.append(
+                {
+                    "index": index,
+                    "startLine": start + 1,
+                    "removedLines": len([line for line in hunk if line.startswith("-")]),
+                    "addedLines": len([line for line in hunk if line.startswith("+")]),
+                }
+            )
+
+        updated = self.update_record(record_id, UpdateRecordRequest(text="\n".join(current_lines)))
+        return {
+            "record": updated,
+            "patch": {
+                "hunks": len(hunks),
+                "applied": applied,
+            },
+        }
 
     def read_record_lines(self, record_id: str, *, line_start: int = 1, line_limit: int = 80) -> dict[str, Any]:
         record = self.get_record(record_id)

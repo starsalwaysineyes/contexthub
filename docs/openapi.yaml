@@ -239,6 +239,25 @@ components:
         pinned:
           type: boolean
 
+    EditRecordTextRequest:
+      type: object
+      required: [matchText, replaceText]
+      properties:
+        matchText:
+          type: string
+        replaceText:
+          type: string
+        replaceAll:
+          type: boolean
+          default: false
+
+    ApplyPatchRequest:
+      type: object
+      required: [patch]
+      properties:
+        patch:
+          type: string
+
     ListRecordsRequest:
       type: object
       required: [tenantId]
@@ -696,6 +715,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Record"
+
+  /v1/records/{recordId}/edit:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Replace text inside one record
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditRecordTextRequest"
+      responses:
+        "200":
+          description: OK
+
+  /v1/records/{recordId}/apply_patch:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Apply unified patch text to one record
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplyPatchRequest"
+      responses:
+        "200":
+          description: OK
 
   /v1/records/{recordId}/lines:
     get:

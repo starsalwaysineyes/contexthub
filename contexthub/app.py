@@ -11,12 +11,14 @@ from contexthub.config import load_config
 from contexthub.env import load_env_files
 from contexthub.providers import EmbeddingClient, LiteLLMAbstractionClient, RerankClient
 from contexthub.schemas import (
+    ApplyPatchRequest,
     CommitSessionRequest,
     CreatePartitionRequest,
     CreatePrincipalRequest,
     BrowseTreeRequest,
     CreateRecordRequest,
     CreateTenantRequest,
+    EditRecordTextRequest,
     GrepRequest,
     HealthResponse,
     ImportResourceRequest,
@@ -174,6 +176,26 @@ def create_app() -> FastAPI:
         record = service.get_record(record_id)
         security.ensure_partition_write(auth, record["tenantId"], record["partitionKey"])
         return service.update_record(record_id, payload)
+
+    @app.post("/v1/records/{record_id}/edit")
+    def edit_record_text(
+        record_id: str,
+        payload: EditRecordTextRequest,
+        auth: AuthContext = Depends(get_auth),
+    ) -> dict:
+        record = service.get_record(record_id)
+        security.ensure_partition_write(auth, record["tenantId"], record["partitionKey"])
+        return service.edit_record_text(record_id, payload)
+
+    @app.post("/v1/records/{record_id}/apply_patch")
+    def apply_record_patch(
+        record_id: str,
+        payload: ApplyPatchRequest,
+        auth: AuthContext = Depends(get_auth),
+    ) -> dict:
+        record = service.get_record(record_id)
+        security.ensure_partition_write(auth, record["tenantId"], record["partitionKey"])
+        return service.apply_record_patch(record_id, payload)
 
     @app.get("/v1/records/{record_id}/lines")
     def read_record_lines(

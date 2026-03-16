@@ -77,6 +77,16 @@ class UpdateRecordRequest(BaseModel):
     pinned: bool | None = None
 
 
+class EditRecordTextRequest(BaseModel):
+    match_text: str = Field(alias="matchText")
+    replace_text: str = Field(alias="replaceText")
+    replace_all: bool = Field(default=False, alias="replaceAll")
+
+
+class ApplyPatchRequest(BaseModel):
+    patch: str
+
+
 class QueryRequest(BaseModel):
     tenant_id: str = Field(alias="tenantId")
     query: str

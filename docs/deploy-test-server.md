@@ -10,7 +10,7 @@ Deploy ContextHub to the test host `root@38.55.39.92 -p 2222` with a repeatable 
 - service name: `contexthub`
 - systemd unit template: `deploy/contexthub.service`
 - bootstrap script: `scripts/deploy-test-server.sh`
-- bind address: `127.0.0.1:4040` on the server for initial validation
+- bind address is driven by `.env` (`CONTEXT_HUB_BIND_HOST`, `CONTEXT_HUB_PORT`); current conservative default is `127.0.0.1:4040` for initial validation
 
 ## Bootstrap behavior
 

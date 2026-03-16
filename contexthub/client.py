@@ -41,6 +41,12 @@ class ContextHubClient:
     def update_record(self, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return self._request("PATCH", f"/v1/records/{record_id}", payload)
 
+    def edit_record_text(self, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", f"/v1/records/{record_id}/edit", payload)
+
+    def apply_record_patch(self, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", f"/v1/records/{record_id}/apply_patch", payload)
+
     def read_record_lines(self, record_id: str, from_line: int = 1, limit: int = 80) -> dict[str, Any]:
         return self._request("GET", f"/v1/records/{record_id}/lines?from_line={from_line}&limit={limit}")
 
