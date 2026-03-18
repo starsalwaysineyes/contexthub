@@ -62,6 +62,32 @@ Prefer Worker-native async patterns later:
 - Cron Triggers
 - Workflows
 
+## Current skeleton
+
+This directory now includes a first runnable Worker skeleton:
+
+- `package.json`
+- `tsconfig.json`
+- `wrangler.jsonc`
+- `src/index.ts`
+- `migrations/0001_init.sql`
+
+Local bootstrap:
+
+```bash
+cd cloudflare
+npm install
+npm run check
+npx wrangler d1 migrations apply contexthub-phase1 --local
+npm run dev
+```
+
+Current implemented routes:
+
+- `GET /`
+- `GET /health`
+- `/v1/fs/*` -> `501 not implemented` placeholder
+
 ## Recommended MVP scope
 
 Good first Worker-native slice:

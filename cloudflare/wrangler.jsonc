@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "contexthub-phase1-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-03-19",
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "contexthub-phase1",
+      "database_id": "REPLACE_WITH_REAL_D1_DATABASE_ID"
+    }
+  ],
+  "vars": {
+    "CONTEXT_HUB_BIND_MODE": "cloudflare-worker"
+  }
+}

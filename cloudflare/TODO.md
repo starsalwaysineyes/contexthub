@@ -7,7 +7,7 @@
 - [ ] Land `read/write/stat/ls/tree` first
 - [ ] Land `search` with lexical-first behavior
 - [ ] Decide whether `reindex` is sync-for-small-scope or queue-backed
-- [ ] Add `wrangler` project skeleton only after the API surface is agreed
+- [x] Add `wrangler` project skeleton with a minimal Worker entrypoint and first D1 migration
 
 ## Architecture questions
 
