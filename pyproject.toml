@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "contexthub"
+version = "0.1.0"
+description = "Phase-1 ctx:// cloud filesystem service"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "httpx>=0.28.0",
+  "pydantic>=2.10.0",
+  "typer>=0.15.0",
+  "uvicorn>=0.34.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+]
+
+[project.scripts]
+ctx_cli = "contexthub.cli:app"
+contexthub-serve = "contexthub.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["contexthub"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
