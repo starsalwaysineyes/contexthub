@@ -86,7 +86,14 @@ Current implemented routes:
 
 - `GET /`
 - `GET /health`
-- `/v1/fs/*` -> `501 not implemented` placeholder
+- `POST /v1/workspaces/register`
+- `POST /v1/fs/mkdir`
+- `GET /v1/fs/ls`
+- `GET /v1/fs/stat`
+- `GET /v1/fs/tree`
+- `GET /v1/fs/read`
+- `POST /v1/fs/write`
+- remaining `/v1/fs/*` routes currently return `501` placeholders
 
 ## Recommended MVP scope
 

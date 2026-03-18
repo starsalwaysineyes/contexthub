@@ -2,10 +2,11 @@
 
 ## MVP
 
-- [ ] Define D1 schema for user / workspace / file / chunk / search metadata
-- [ ] Define Worker routing for `/v1/fs/*`
-- [ ] Land `read/write/stat/ls/tree` first
+- [x] Define D1 schema for user / workspace / file / chunk / search metadata
+- [x] Define Worker routing for the first `/v1/fs/*` slice
+- [x] Land `read/write/stat/ls/tree` first
 - [ ] Land `search` with lexical-first behavior
+- [ ] Land `edit` / `apply_patch` with lightweight optimistic concurrency
 - [ ] Decide whether `reindex` is sync-for-small-scope or queue-backed
 - [x] Add `wrangler` project skeleton with a minimal Worker entrypoint and first D1 migration
 
