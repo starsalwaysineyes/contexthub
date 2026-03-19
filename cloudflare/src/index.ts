@@ -1,5 +1,5 @@
 import { ApiError, parseCtxUri, type WorkspaceKind } from "./ctx.js";
-import { assertAuthorized, edit, ls, mkdir, read, registerWorkspace, reindex, search, stat, tree, write, type Env } from "./filesystem.js";
+import { applyPatch, assertAuthorized, copy, edit, ls, mkdir, move, read, registerWorkspace, reindex, remove, search, stat, tree, write, type Env } from "./filesystem.js";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data, null, 2), {
@@ -127,6 +127,38 @@ export default {
         return json(await reindex(env, userId, scopeUri, workspaceMode));
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/fs/apply_patch") {
+        const payload = await request.json<Record<string, unknown>>();
+        const uri = String(payload.uri || "").trim();
+        const patch = String(payload.patch || "");
+        return json(await applyPatch(env, parseCtxUri(uri), patch));
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/fs/mv") {
+        const payload = await request.json<Record<string, unknown>>();
+        const sourceUri = String(payload.sourceUri || "").trim();
+        const destinationUri = String(payload.destinationUri || "").trim();
+        const createParents = payload.createParents === undefined ? true : Boolean(payload.createParents);
+        const overwrite = payload.overwrite === undefined ? false : Boolean(payload.overwrite);
+        return json(await move(env, parseCtxUri(sourceUri), parseCtxUri(destinationUri), createParents, overwrite));
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/fs/cp") {
+        const payload = await request.json<Record<string, unknown>>();
+        const sourceUri = String(payload.sourceUri || "").trim();
+        const destinationUri = String(payload.destinationUri || "").trim();
+        const createParents = payload.createParents === undefined ? true : Boolean(payload.createParents);
+        const overwrite = payload.overwrite === undefined ? false : Boolean(payload.overwrite);
+        return json(await copy(env, parseCtxUri(sourceUri), parseCtxUri(destinationUri), createParents, overwrite));
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/fs/rm") {
+        const payload = await request.json<Record<string, unknown>>();
+        const uri = String(payload.uri || "").trim();
+        const recursive = payload.recursive === undefined ? false : Boolean(payload.recursive);
+        return json(await remove(env, parseCtxUri(uri), recursive));
+      }
+
       if (url.pathname.startsWith("/v1/fs/")) {
         return json(
           {
@@ -143,10 +175,9 @@ export default {
               "POST /v1/fs/write",
             ],
             nextSlice: [
-              "POST /v1/fs/apply_patch",
-              "POST /v1/fs/mv",
-              "POST /v1/fs/cp",
-              "POST /v1/fs/rm",
+              "bootstrap deploy flow",
+              "authenticated multi-agent onboarding docs",
+              "optional semantic search later",
             ],
           },
           501,

@@ -71,6 +71,8 @@ This directory now includes a first runnable Worker skeleton:
 - `wrangler.jsonc`
 - `src/index.ts`
 - `migrations/0001_init.sql`
+- `scripts/bootstrap-free.sh`
+- `DEPLOY.md`
 
 Local bootstrap:
 
@@ -81,6 +83,16 @@ npm run check
 npx wrangler d1 migrations apply contexthub-phase1 --local
 npm run dev
 ```
+
+Cloudflare Free deployment bootstrap:
+
+```bash
+cd cloudflare
+npm install
+npm run bootstrap:free
+```
+
+See `DEPLOY.md` for the individual-user deployment path.
 
 Current implemented routes:
 
@@ -94,9 +106,12 @@ Current implemented routes:
 - `GET /v1/fs/read`
 - `POST /v1/fs/write`
 - `POST /v1/fs/edit`
+- `POST /v1/fs/apply_patch`
+- `POST /v1/fs/mv`
+- `POST /v1/fs/cp`
+- `POST /v1/fs/rm`
 - `POST /v1/fs/search` (lexical-first, `live-scan` plan source)
 - `POST /v1/fs/reindex` (rebuilds lightweight chunk rows)
-- remaining `/v1/fs/*` routes currently return `501` placeholders
 
 ## Recommended MVP scope
 

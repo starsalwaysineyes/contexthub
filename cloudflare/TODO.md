@@ -6,9 +6,11 @@
 - [x] Define Worker routing for the first `/v1/fs/*` slice
 - [x] Land `read/write/stat/ls/tree` first
 - [x] Land `search` with lexical-first behavior
-- [ ] Land `apply_patch` with lightweight optimistic concurrency
+- [x] Land `apply_patch` with lightweight optimistic concurrency
 - [x] Land a first small-scope synchronous `reindex`
+- [x] Land `mv/cp/rm` for multi-agent workspace hygiene
 - [ ] Decide whether larger `reindex` should later move to queue-backed execution
+- [x] Add a Cloudflare Free deploy bootstrap for individual users
 - [x] Add `wrangler` project skeleton with a minimal Worker entrypoint and first D1 migration
 
 ## Architecture questions

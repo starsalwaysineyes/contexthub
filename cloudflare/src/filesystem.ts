@@ -261,6 +261,170 @@ export async function edit(
   };
 }
 
+export async function applyPatch(env: Env, parsed: ParsedCtxUri, patch: string): Promise<Record<string, unknown>> {
+  const current = await read(env, parsed);
+  let currentLines = String(current.text || "").split(/\r?\n/);
+  const hunks = parsePatchHunks(patch);
+  if (hunks.length === 0) {
+    throw new ApiError(400, "no patch hunks found");
+  }
+
+  const applied: Array<Record<string, unknown>> = [];
+  for (let index = 0; index < hunks.length; index += 1) {
+    const hunk = hunks[index];
+    const preimage = hunk.filter((line) => line.startsWith(" ") || line.startsWith("-")).map((line) => line.slice(1));
+    const postimage = hunk.filter((line) => line.startsWith(" ") || line.startsWith("+")).map((line) => line.slice(1));
+    if (preimage.length === 0) {
+      throw new ApiError(400, "patch hunks must include context or removed lines");
+    }
+    const positions = findBlockPositions(currentLines, preimage);
+    if (positions.length === 0) {
+      throw new ApiError(400, `patch hunk ${index + 1} did not match current file`);
+    }
+    if (positions.length > 1) {
+      throw new ApiError(400, `patch hunk ${index + 1} matched multiple locations`);
+    }
+    const start = positions[0];
+    currentLines = currentLines.slice(0, start).concat(postimage, currentLines.slice(start + preimage.length));
+    applied.push({
+      index: index + 1,
+      startLine: start + 1,
+      removedLines: hunk.filter((line) => line.startsWith("-")).length,
+      addedLines: hunk.filter((line) => line.startsWith("+")).length,
+    });
+  }
+
+  await write(env, parsed, currentLines.join("\n"), true, true);
+  return { uri: parsed.raw, hunks: hunks.length, applied };
+}
+
+export async function move(
+  env: Env,
+  sourceParsed: ParsedCtxUri,
+  destinationParsed: ParsedCtxUri,
+  createParents: boolean,
+  overwrite: boolean,
+): Promise<Record<string, unknown>> {
+  assertMutableUri(sourceParsed);
+  assertMutableUri(destinationParsed);
+  assertNoNestedMove(sourceParsed, destinationParsed);
+
+  const sourceScope = toWorkspaceScope(sourceParsed);
+  const destinationScope = toWorkspaceScope(destinationParsed);
+  await ensureWorkspaceRecord(env, destinationScope);
+
+  const sourceEntries = await collectTransferEntries(env, sourceScope, sourceParsed.relativePath, sourceParsed.raw);
+  if (createParents) {
+    await ensureDirectoryPath(env, destinationScope, parentPath(destinationParsed.relativePath), true);
+  } else {
+    await assertDirectoryPathExists(env, destinationScope, parentPath(destinationParsed.relativePath), destinationParsed.raw);
+  }
+
+  const existingDestination = await getEntry(env, destinationScope, destinationParsed.relativePath);
+  if (existingDestination && !overwrite) {
+    throw new ApiError(400, `destination already exists: ${destinationParsed.raw}`);
+  }
+  if (existingDestination) {
+    await remove(env, destinationParsed, true);
+  }
+
+  for (const row of sourceEntries) {
+    const nextRelativePath = rewriteRelativePath(row.relative_path, sourceParsed.relativePath, destinationParsed.relativePath);
+    await env.DB.prepare(
+      `UPDATE fs_entries
+       SET user_id = ?, workspace_kind = ?, agent_id = ?, relative_path = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+    )
+      .bind(destinationScope.userId, destinationScope.workspaceKind, destinationScope.agentId, nextRelativePath, row.id)
+      .run();
+  }
+
+  return { sourceUri: sourceParsed.raw, destinationUri: destinationParsed.raw, moved: true };
+}
+
+export async function copy(
+  env: Env,
+  sourceParsed: ParsedCtxUri,
+  destinationParsed: ParsedCtxUri,
+  createParents: boolean,
+  overwrite: boolean,
+): Promise<Record<string, unknown>> {
+  assertMutableUri(sourceParsed);
+  assertMutableUri(destinationParsed);
+  assertNoNestedMove(sourceParsed, destinationParsed);
+
+  const sourceScope = toWorkspaceScope(sourceParsed);
+  const destinationScope = toWorkspaceScope(destinationParsed);
+  await ensureWorkspaceRecord(env, destinationScope);
+
+  const sourceEntries = await collectTransferEntries(env, sourceScope, sourceParsed.relativePath, sourceParsed.raw);
+  if (createParents) {
+    await ensureDirectoryPath(env, destinationScope, parentPath(destinationParsed.relativePath), true);
+  } else {
+    await assertDirectoryPathExists(env, destinationScope, parentPath(destinationParsed.relativePath), destinationParsed.raw);
+  }
+
+  const existingDestination = await getEntry(env, destinationScope, destinationParsed.relativePath);
+  if (existingDestination && !overwrite) {
+    throw new ApiError(400, `destination already exists: ${destinationParsed.raw}`);
+  }
+  if (existingDestination) {
+    await remove(env, destinationParsed, true);
+  }
+
+  for (const row of sourceEntries) {
+    const nextRelativePath = rewriteRelativePath(row.relative_path, sourceParsed.relativePath, destinationParsed.relativePath);
+    await env.DB.prepare(
+      `INSERT INTO fs_entries (
+        user_id, workspace_kind, agent_id, relative_path, kind, title, content_text, content_hash, size_bytes, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    )
+      .bind(
+        destinationScope.userId,
+        destinationScope.workspaceKind,
+        destinationScope.agentId,
+        nextRelativePath,
+        row.kind,
+        null,
+        row.content_text,
+        row.content_hash,
+        row.size_bytes,
+      )
+      .run();
+
+    if (row.kind === "file") {
+      const inserted = await getEntry(env, destinationScope, nextRelativePath);
+      if (inserted) {
+        await rebuildSearchChunks(env, inserted.id, row.content_text || "");
+      }
+    }
+  }
+
+  return { sourceUri: sourceParsed.raw, destinationUri: destinationParsed.raw, copied: true };
+}
+
+export async function remove(env: Env, parsed: ParsedCtxUri, recursive: boolean): Promise<Record<string, unknown>> {
+  assertMutableUri(parsed);
+  const scope = toWorkspaceScope(parsed);
+  const entry = await getEntry(env, scope, parsed.relativePath);
+  if (!entry) {
+    throw new ApiError(404, `path does not exist: ${parsed.raw}`);
+  }
+  if (entry.kind === "file") {
+    await env.DB.prepare("DELETE FROM fs_entries WHERE id = ?").bind(entry.id).run();
+    return { uri: parsed.raw, kind: "file", removed: true };
+  }
+
+  const rows = await collectTransferEntries(env, scope, parsed.relativePath, parsed.raw);
+  if (!recursive && rows.length > 1) {
+    throw new ApiError(400, `directory is not empty: ${parsed.raw}; set recursive=true`);
+  }
+  for (const row of [...rows].reverse()) {
+    await env.DB.prepare("DELETE FROM fs_entries WHERE id = ?").bind(row.id).run();
+  }
+  return { uri: parsed.raw, kind: "dir", removed: true };
+}
+
 export async function search(
   env: Env,
   userId: string,
@@ -768,6 +932,113 @@ async function listWorkspaceScopes(env: Env, userId: string): Promise<WorkspaceS
     workspaceKind: row.workspace_kind,
     agentId: row.agent_id,
   }));
+}
+
+async function collectTransferEntries(env: Env, scope: WorkspaceScope, rootRelativePath: string, rawUri: string): Promise<FsEntryRow[]> {
+  const target = await getEntry(env, scope, rootRelativePath);
+  if (!target) {
+    throw new ApiError(404, `path does not exist: ${rawUri}`);
+  }
+  if (target.kind === "file") {
+    return [target];
+  }
+  const prefix = `${rootRelativePath}/`;
+  const result = await env.DB.prepare(
+    `SELECT id, user_id, workspace_kind, agent_id, relative_path, kind, content_text, content_hash, size_bytes, created_at, updated_at
+     FROM fs_entries
+     WHERE user_id = ? AND workspace_kind = ? AND agent_id = ? AND (relative_path = ? OR relative_path LIKE ?)
+     ORDER BY LENGTH(relative_path) ASC, relative_path ASC`,
+  )
+    .bind(scope.userId, scope.workspaceKind, scope.agentId, rootRelativePath, `${prefix}%`)
+    .all<FsEntryRow>();
+  return result.results || [];
+}
+
+function rewriteRelativePath(currentPath: string, sourceRoot: string, destinationRoot: string): string {
+  if (currentPath === sourceRoot) return destinationRoot;
+  const suffix = currentPath.slice(sourceRoot.length + 1);
+  return `${destinationRoot}/${suffix}`;
+}
+
+function assertMutableUri(parsed: ParsedCtxUri): void {
+  if (parsed.isUserRoot || parsed.isWorkspaceRoot) {
+    throw new ApiError(400, "cannot mutate a user root or workspace root directly");
+  }
+}
+
+function assertNoNestedMove(source: ParsedCtxUri, destination: ParsedCtxUri): void {
+  if (
+    source.userId === destination.userId &&
+    source.workspaceKind === destination.workspaceKind &&
+    source.agentId === destination.agentId &&
+    destination.relativePath &&
+    (destination.relativePath === source.relativePath || destination.relativePath.startsWith(`${source.relativePath}/`))
+  ) {
+    throw new ApiError(400, `destination cannot be the same as or nested under source: ${destination.raw}`);
+  }
+}
+
+function parsePatchHunks(patchText: string): string[][] {
+  const hunks: string[][] = [];
+  let current: string[] = [];
+  let sawPatchMarker = false;
+
+  for (const rawLine of patchText.split(/\r?\n/)) {
+    if (rawLine.startsWith("*** Begin Patch")) {
+      sawPatchMarker = true;
+      continue;
+    }
+    if (rawLine.startsWith("*** End Patch")) {
+      break;
+    }
+    if (rawLine.startsWith("*** Update File:") || rawLine.startsWith("*** Delete File:") || rawLine.startsWith("*** Add File:") || rawLine.startsWith("--- ") || rawLine.startsWith("+++ ")) {
+      sawPatchMarker = true;
+      continue;
+    }
+    if (rawLine.startsWith("@@")) {
+      sawPatchMarker = true;
+      if (current.length > 0) {
+        hunks.push(current);
+        current = [];
+      }
+      continue;
+    }
+    if (rawLine.startsWith("\\")) {
+      continue;
+    }
+    if (rawLine.startsWith(" ") || rawLine.startsWith("+") || rawLine.startsWith("-")) {
+      sawPatchMarker = true;
+      current.push(rawLine);
+      continue;
+    }
+    if (rawLine.trim() === "") {
+      if (current.length > 0) {
+        throw new ApiError(400, "blank lines inside hunks must keep a diff prefix");
+      }
+      continue;
+    }
+    if (sawPatchMarker) {
+      throw new ApiError(400, `invalid patch line: ${rawLine}`);
+    }
+  }
+
+  if (current.length > 0) {
+    hunks.push(current);
+  }
+  return hunks;
+}
+
+function findBlockPositions(lines: string[], needle: string[]): number[] {
+  const positions: number[] = [];
+  if (needle.length === 0) return positions;
+  const maxStart = lines.length - needle.length;
+  for (let start = 0; start <= maxStart; start += 1) {
+    const candidate = lines.slice(start, start + needle.length);
+    if (candidate.length === needle.length && candidate.every((line, index) => line === needle[index])) {
+      positions.push(start);
+    }
+  }
+  return positions;
 }
 
 async function listSearchCandidates(env: Env, searchScope: SearchScope): Promise<SearchCandidateRow[]> {
