@@ -93,6 +93,9 @@ Current implemented routes:
 - `GET /v1/fs/tree`
 - `GET /v1/fs/read`
 - `POST /v1/fs/write`
+- `POST /v1/fs/edit`
+- `POST /v1/fs/search` (lexical-first, `live-scan` plan source)
+- `POST /v1/fs/reindex` (rebuilds lightweight chunk rows)
 - remaining `/v1/fs/*` routes currently return `501` placeholders
 
 ## Recommended MVP scope

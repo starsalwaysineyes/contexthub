@@ -5,9 +5,10 @@
 - [x] Define D1 schema for user / workspace / file / chunk / search metadata
 - [x] Define Worker routing for the first `/v1/fs/*` slice
 - [x] Land `read/write/stat/ls/tree` first
-- [ ] Land `search` with lexical-first behavior
-- [ ] Land `edit` / `apply_patch` with lightweight optimistic concurrency
-- [ ] Decide whether `reindex` is sync-for-small-scope or queue-backed
+- [x] Land `search` with lexical-first behavior
+- [ ] Land `apply_patch` with lightweight optimistic concurrency
+- [x] Land a first small-scope synchronous `reindex`
+- [ ] Decide whether larger `reindex` should later move to queue-backed execution
 - [x] Add `wrangler` project skeleton with a minimal Worker entrypoint and first D1 migration
 
 ## Architecture questions

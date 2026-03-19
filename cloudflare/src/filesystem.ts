@@ -1,4 +1,4 @@
-import { ApiError, buildChildUri, buildWorkspaceUri, parentPath, splitRelativePath, toWorkspaceScope, type ParsedCtxUri, type WorkspaceKind, type WorkspaceScope } from "./ctx.js";
+import { ApiError, buildChildUri, buildWorkspaceUri, parentPath, parseCtxUri, splitRelativePath, toWorkspaceScope, type ParsedCtxUri, type WorkspaceKind, type WorkspaceScope } from "./ctx.js";
 
 export interface Env {
   DB: D1Database;
@@ -227,7 +227,113 @@ export async function write(
     .bind(scope.userId, scope.workspaceKind, scope.agentId, parsed.relativePath, text, contentHash, sizeBytes)
     .run();
 
+  const updated = await getEntry(env, scope, parsed.relativePath);
+  if (!updated) {
+    throw new ApiError(500, `write succeeded but entry lookup failed: ${parsed.raw}`);
+  }
+  await rebuildSearchChunks(env, updated.id, text);
+
   return { uri: parsed.raw, written: true };
+}
+
+export async function edit(
+  env: Env,
+  parsed: ParsedCtxUri,
+  matchText: string,
+  replaceText: string,
+  replaceAll: boolean,
+): Promise<Record<string, unknown>> {
+  const current = await read(env, parsed);
+  const text = String(current.text || "");
+  const matchCount = countOccurrences(text, matchText);
+  if (matchCount === 0) {
+    throw new ApiError(400, "matchText not found");
+  }
+  if (matchCount > 1 && !replaceAll) {
+    throw new ApiError(400, "matchText matched multiple locations; set replaceAll=true");
+  }
+  const nextText = replaceAll ? text.split(matchText).join(replaceText) : text.replace(matchText, replaceText);
+  await write(env, parsed, nextText, true, true);
+  return {
+    uri: parsed.raw,
+    matched: matchCount,
+    replaced: replaceAll ? matchCount : 1,
+  };
+}
+
+export async function search(
+  env: Env,
+  userId: string,
+  query: string,
+  scopeUri: string | null,
+  workspaceMode: string,
+  mode: string,
+  expansions: string[],
+  globPattern: string | null,
+  pathPrefix: string | null,
+  explain: boolean,
+  limit: number,
+): Promise<Record<string, unknown>> {
+  const trimmedQuery = query.trim();
+  const normalizedQuery = normalizeQuery(trimmedQuery);
+  const effective = await resolveSearchScope(env, userId, scopeUri, workspaceMode);
+  const files = await listSearchCandidates(env, effective);
+  const terms = uniqueTerms([trimmedQuery, ...expansions]);
+  const hits = files
+    .filter((row) => matchesOptionalFilters(row.relative_path, effective.relativePrefix, globPattern, pathPrefix))
+    .map((row) => scoreSearchRow(row, terms, trimmedQuery, effective.workspaceMode))
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score || a.uri.localeCompare(b.uri))
+    .slice(0, Math.max(1, limit))
+    .map((row) => ({
+      uri: row.uri,
+      title: row.title,
+      kind: "file",
+      docType: row.docType,
+      workspaceKind: row.workspaceKind,
+      agentId: row.agentId || null,
+      score: Number(row.score.toFixed(6)),
+      snippet: row.snippet,
+      lineNumber: row.lineNumber,
+      reasons: explain ? row.reasons : [],
+    }));
+
+  return {
+    query: trimmedQuery,
+    normalizedQuery,
+    scopeUri: effective.scopeUri,
+    workspaceMode: effective.workspaceMode,
+    mode,
+    rewrites: [],
+    plan: {
+      source: "live-scan",
+      lexical: true,
+      semantic: false,
+      rerank: false,
+      explain,
+      candidateCount: hits.length,
+      fallback: mode === "lexical" ? null : "worker-live-scan-lexical-only",
+    },
+    hits,
+  };
+}
+
+export async function reindex(env: Env, userId: string, scopeUri: string | null, workspaceMode: string): Promise<Record<string, unknown>> {
+  const effective = await resolveSearchScope(env, userId, scopeUri, workspaceMode);
+  const files = await listSearchCandidates(env, effective);
+  let indexed = 0;
+  for (const row of files) {
+    await rebuildSearchChunks(env, row.id, row.content_text || "");
+    indexed += 1;
+  }
+  return {
+    userId,
+    scopeUri: effective.scopeUri,
+    indexed,
+    unchanged: 0,
+    removed: 0,
+    skipped: 0,
+  };
 }
 
 export async function assertAuthorized(request: Request, env: Env): Promise<void> {
@@ -458,12 +564,255 @@ function basename(relativePath: string): string {
   return segments[segments.length - 1] || relativePath;
 }
 
+type SearchScope = {
+  scopeUri: string;
+  workspaceMode: string;
+  scopes: WorkspaceScope[];
+  relativePrefix: string;
+};
+
+type SearchCandidateRow = FsEntryRow & {
+  uri: string;
+  docType: string;
+  title: string;
+  workspaceKind: WorkspaceKind;
+  agentId: string;
+};
+
+type ScoredSearchRow = SearchCandidateRow & {
+  score: number;
+  snippet: string;
+  lineNumber: number | null;
+  reasons: string[];
+};
+
 function countLines(text: string): number {
   return text ? text.split(/\r?\n/).length : 0;
 }
 
 function byteLength(text: string): number {
   return new TextEncoder().encode(text).byteLength;
+}
+
+function countOccurrences(text: string, needle: string): number {
+  if (!needle) return 0;
+  let index = 0;
+  let count = 0;
+  while (true) {
+    const next = text.indexOf(needle, index);
+    if (next < 0) return count;
+    count += 1;
+    index = next + needle.length;
+  }
+}
+
+function normalizeQuery(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function uniqueTerms(values: string[]): string[] {
+  const terms = new Set<string>();
+  for (const value of values) {
+    for (const match of value.toLowerCase().match(/[\p{L}\p{N}_-]+/gu) || []) {
+      if (match) terms.add(match);
+    }
+  }
+  return [...terms];
+}
+
+function matchesOptionalFilters(relativePath: string, scopePrefix: string, globPattern: string | null, pathPrefix: string | null): boolean {
+  const target = relativePath;
+  if (scopePrefix && !target.startsWith(scopePrefix)) return false;
+  if (pathPrefix && !target.startsWith(pathPrefix.replace(/^\/+/, ""))) return false;
+  if (globPattern && !globToRegExp(globPattern).test(target)) return false;
+  return true;
+}
+
+function globToRegExp(pattern: string): RegExp {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*\*/g, "::DOUBLE_STAR::")
+    .replace(/\*/g, "[^/]*")
+    .replace(/::DOUBLE_STAR::/g, ".*")
+    .replace(/\?/g, ".");
+  return new RegExp(`^${escaped}$`);
+}
+
+function docTypeForPath(relativePath: string): string {
+  const head = splitRelativePath(relativePath)[0] || "root";
+  if (["docs", "memory", "archive", "tasks"].includes(head)) return head;
+  const segments = splitRelativePath(relativePath);
+  const tail = segments[segments.length - 1] || "";
+  if (tail.endsWith(".md")) return "markdown";
+  return "file";
+}
+
+function titleForRow(row: FsEntryRow): string {
+  const text = row.content_text || "";
+  const heading = text.split(/\r?\n/).find((line) => line.trim().startsWith("# "));
+  if (heading) return heading.trim().replace(/^#\s+/, "");
+  return basename(row.relative_path);
+}
+
+function findSnippet(text: string, query: string, terms: string[]): { snippet: string; lineNumber: number | null } {
+  const lines = text.split(/\r?\n/);
+  const lowerQuery = query.toLowerCase();
+  for (let index = 0; index < lines.length; index += 1) {
+    const lower = lines[index].toLowerCase();
+    if ((lowerQuery && lower.includes(lowerQuery)) || terms.some((term) => lower.includes(term))) {
+      return { snippet: lines[index].slice(0, 240), lineNumber: index + 1 };
+    }
+  }
+  const snippet = text.replace(/\s+/g, " ").slice(0, 240);
+  return { snippet, lineNumber: text ? 1 : null };
+}
+
+function scoreSearchRow(row: SearchCandidateRow, terms: string[], rawQuery: string, workspaceMode: string): ScoredSearchRow {
+  const pathText = row.relative_path.toLowerCase();
+  const titleText = row.title.toLowerCase();
+  const bodyText = (row.content_text || "").toLowerCase();
+  const normalizedQuery = rawQuery.toLowerCase();
+  let score = 0;
+  const reasons: string[] = [];
+
+  if (normalizedQuery && titleText.includes(normalizedQuery)) {
+    score += 6;
+    reasons.push(`title match: ${rawQuery}`);
+  }
+  if (normalizedQuery && pathText.includes(normalizedQuery)) {
+    score += 5;
+    reasons.push(`path match: ${rawQuery}`);
+  }
+  if (normalizedQuery && bodyText.includes(normalizedQuery)) {
+    score += 4;
+    reasons.push(`body match: ${rawQuery}`);
+  }
+
+  for (const term of terms) {
+    if (titleText.includes(term)) {
+      score += 2.5;
+      reasons.push(`title token: ${term}`);
+    }
+    if (pathText.includes(term)) {
+      score += 2;
+      reasons.push(`path token: ${term}`);
+    }
+    if (bodyText.includes(term)) {
+      score += 1;
+      reasons.push(`body token: ${term}`);
+    }
+  }
+
+  if (workspaceMode === "default-first" && row.workspaceKind === "defaultWorkspace") {
+    score += 0.75;
+    reasons.push("workspace boost: defaultWorkspace");
+  }
+
+  const snippet = findSnippet(row.content_text || "", rawQuery, terms);
+  return {
+    ...row,
+    score,
+    snippet: snippet.snippet,
+    lineNumber: snippet.lineNumber,
+    reasons: reasons.slice(0, 6),
+  };
+}
+
+async function resolveSearchScope(env: Env, userId: string, scopeUri: string | null, workspaceMode: string): Promise<SearchScope> {
+  if (scopeUri) {
+    const parsed = parseCtxUri(scopeUri);
+    if (parsed.userId !== userId) {
+      throw new ApiError(400, `scope user mismatch: ${scopeUri}`);
+    }
+    if (parsed.isUserRoot) {
+      const scopes = await listWorkspaceScopes(env, userId);
+      return {
+        scopeUri: parsed.raw,
+        workspaceMode,
+        scopes,
+        relativePrefix: "",
+      };
+    }
+    const scope = toWorkspaceScope(parsed);
+    await assertWorkspaceExists(env, scope, parsed.raw);
+    return {
+      scopeUri: parsed.raw,
+      workspaceMode,
+      scopes: [scope],
+      relativePrefix: parsed.relativePath ? `${parsed.relativePath}/` : "",
+    };
+  }
+
+  if (workspaceMode === "user" || workspaceMode === "default-first") {
+    return {
+      scopeUri: `ctx://${userId}`,
+      workspaceMode,
+      scopes: await listWorkspaceScopes(env, userId),
+      relativePrefix: "",
+    };
+  }
+
+  const defaultScope: WorkspaceScope = { userId, workspaceKind: "defaultWorkspace", agentId: "" };
+  return {
+    scopeUri: buildWorkspaceUri(userId, "defaultWorkspace", ""),
+    workspaceMode: "default-only",
+    scopes: [defaultScope],
+    relativePrefix: "",
+  };
+}
+
+async function listWorkspaceScopes(env: Env, userId: string): Promise<WorkspaceScope[]> {
+  const rows = await listWorkspaces(env, userId);
+  return rows.map((row) => ({
+    userId: row.user_id,
+    workspaceKind: row.workspace_kind,
+    agentId: row.agent_id,
+  }));
+}
+
+async function listSearchCandidates(env: Env, searchScope: SearchScope): Promise<SearchCandidateRow[]> {
+  const results: SearchCandidateRow[] = [];
+  for (const scope of searchScope.scopes) {
+    const rows = await env.DB.prepare(
+      `SELECT id, user_id, workspace_kind, agent_id, relative_path, kind, content_text, content_hash, size_bytes, created_at, updated_at
+       FROM fs_entries
+       WHERE user_id = ? AND workspace_kind = ? AND agent_id = ? AND kind = 'file'`,
+    )
+      .bind(scope.userId, scope.workspaceKind, scope.agentId)
+      .all<FsEntryRow>();
+    for (const row of rows.results || []) {
+      results.push({
+        ...row,
+        uri: buildChildUri(scope, row.relative_path),
+        docType: docTypeForPath(row.relative_path),
+        title: titleForRow(row),
+        workspaceKind: scope.workspaceKind,
+        agentId: scope.agentId,
+      });
+    }
+  }
+  return results;
+}
+
+async function rebuildSearchChunks(env: Env, entryId: number, text: string): Promise<void> {
+  await env.DB.prepare("DELETE FROM search_chunks WHERE entry_id = ?").bind(entryId).run();
+  const chunks = chunkText(text);
+  for (let index = 0; index < chunks.length; index += 1) {
+    await env.DB.prepare(
+      `INSERT INTO search_chunks (entry_id, chunk_index, chunk_text, created_at)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+    )
+      .bind(entryId, index, chunks[index])
+      .run();
+  }
+}
+
+function chunkText(text: string): string[] {
+  const normalized = text.replace(/\r\n/g, "\n");
+  if (!normalized) return [];
+  const paragraphs = normalized.split(/\n{2,}/).map((value) => value.trim()).filter(Boolean);
+  if (paragraphs.length > 0) return paragraphs.slice(0, 64);
+  return [normalized.slice(0, 4000)];
 }
 
 async function sha256(text: string): Promise<string> {

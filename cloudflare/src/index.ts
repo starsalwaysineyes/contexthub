@@ -1,5 +1,5 @@
 import { ApiError, parseCtxUri, type WorkspaceKind } from "./ctx.js";
-import { assertAuthorized, ls, mkdir, read, registerWorkspace, stat, tree, write, type Env } from "./filesystem.js";
+import { assertAuthorized, edit, ls, mkdir, read, registerWorkspace, reindex, search, stat, tree, write, type Env } from "./filesystem.js";
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data, null, 2), {
@@ -89,6 +89,44 @@ export default {
         return json(await write(env, parseCtxUri(uri), text, createParents, overwrite));
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/fs/edit") {
+        const payload = await request.json<Record<string, unknown>>();
+        const uri = String(payload.uri || "").trim();
+        const matchText = String(payload.matchText || "");
+        const replaceText = String(payload.replaceText || "");
+        const replaceAll = payload.replaceAll === undefined ? false : Boolean(payload.replaceAll);
+        return json(await edit(env, parseCtxUri(uri), matchText, replaceText, replaceAll));
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/fs/search") {
+        const payload = await request.json<Record<string, unknown>>();
+        const userId = String(payload.userId || "").trim();
+        const query = String(payload.query || "").trim();
+        const scopeUri = payload.scopeUri ? String(payload.scopeUri) : null;
+        const workspaceMode = String(payload.workspaceMode || "default-only").trim() || "default-only";
+        const mode = String(payload.mode || "auto").trim() || "auto";
+        const expansions = Array.isArray(payload.expansions) ? payload.expansions.map((item) => String(item)) : [];
+        const globPattern = payload.glob ? String(payload.glob) : null;
+        const pathPrefix = payload.pathPrefix ? String(payload.pathPrefix) : null;
+        const explain = payload.explain === undefined ? true : Boolean(payload.explain);
+        const limit = Number(payload.limit || 20);
+        if (!userId || !query) {
+          throw new ApiError(400, "search requires userId and query");
+        }
+        return json(await search(env, userId, query, scopeUri, workspaceMode, mode, expansions, globPattern, pathPrefix, explain, Number.isFinite(limit) ? limit : 20));
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/fs/reindex") {
+        const payload = await request.json<Record<string, unknown>>();
+        const userId = String(payload.userId || "").trim();
+        const scopeUri = payload.scopeUri ? String(payload.scopeUri) : null;
+        const workspaceMode = String(payload.workspaceMode || "default-only").trim() || "default-only";
+        if (!userId) {
+          throw new ApiError(400, "reindex requires userId");
+        }
+        return json(await reindex(env, userId, scopeUri, workspaceMode));
+      }
+
       if (url.pathname.startsWith("/v1/fs/")) {
         return json(
           {
@@ -105,9 +143,10 @@ export default {
               "POST /v1/fs/write",
             ],
             nextSlice: [
-              "POST /v1/fs/edit",
-              "POST /v1/fs/search",
-              "POST /v1/fs/reindex",
+              "POST /v1/fs/apply_patch",
+              "POST /v1/fs/mv",
+              "POST /v1/fs/cp",
+              "POST /v1/fs/rm",
             ],
           },
           501,
