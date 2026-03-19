@@ -11,6 +11,22 @@ This guide is intentionally limited to Cloudflare features that are available on
 - No Queues
 - No Vectorize
 
+## Fastest path: Deploy to Cloudflare button
+
+If the repo is public, you can start from the button flow:
+
+```md
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/starsalwaysineyes/contexthub/tree/main/cloudflare)
+```
+
+The button flow is the closest thing to a one-click personal deployment:
+
+- Cloudflare clones the template into the user's GitHub/GitLab account
+- the user fills Worker/resource names in the setup page
+- Workers Builds deploys the Worker
+- D1 is provisioned from `wrangler.jsonc`
+- package scripts prefill build/deploy, including D1 migrations via the `DB` binding
+
 ## Bootstrap
 
 From the `cloudflare/` directory:
@@ -66,6 +82,15 @@ ctx_cli config set userId YOUR_USER_ID
 printf '%s' 'YOUR_TOKEN' | ctx_cli config set token --stdin
 ctx_cli doctor
 ```
+
+## Why the button flow works here
+
+This repo is intentionally shaped to work with the Deploy to Cloudflare setup page:
+
+- `wrangler.jsonc` contains a default Worker name and D1 binding
+- `package.json` exposes `build`, `deploy`, and `db:migrations:apply`
+- `package.json` also provides a description for the optional `CONTEXT_HUB_ADMIN_TOKEN` secret
+- the implementation stays within Cloudflare Free-friendly primitives (`Workers + D1`)
 
 ## Current Worker feature set
 

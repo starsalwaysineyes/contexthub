@@ -1,5 +1,7 @@
 # Cloudflare Worker Track
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/starsalwaysineyes/contexthub/tree/main/cloudflare)
+
 This directory is reserved for a Worker-native ContextHub implementation.
 
 The goal is not to transplant the current Python/FastAPI service 1:1. The goal is to preserve the external phase-1 `ctx://` contract while re-implementing the backend around Cloudflare-native primitives.
@@ -91,6 +93,14 @@ cd cloudflare
 npm install
 npm run bootstrap:free
 ```
+
+Deploy to Cloudflare button:
+
+```md
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/starsalwaysineyes/contexthub/tree/main/cloudflare)
+```
+
+The button path is designed for the `cloudflare/` subdirectory and relies on Workers Builds + automatic resource provisioning from `wrangler.jsonc`.
 
 See `DEPLOY.md` for the individual-user deployment path.
 

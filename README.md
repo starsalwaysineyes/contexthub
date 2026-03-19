@@ -140,7 +140,11 @@ It is not a full IDE; it is a management panel for understanding and searching w
 
 A Worker-native implementation track now lives under `cloudflare/`.
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/starsalwaysineyes/contexthub/tree/main/cloudflare)
+
 That directory is for a protocol-compatible reimplementation of the phase-1 `ctx://` service on Cloudflare primitives such as `D1`, optional `R2`, and later queue/do-based background coordination. It is not intended to bundle the current Python server unchanged.
+
+See `cloudflare/README.md` and `cloudflare/DEPLOY.md` for the free-tier deployment path.
 
 ## Tests
 

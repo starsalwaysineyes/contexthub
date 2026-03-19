@@ -4,10 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "npm run check",
     "check": "tsc --noEmit",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "db:migrations:apply": "wrangler d1 migrations apply DB --remote",
+    "deploy": "npm run db:migrations:apply && wrangler deploy",
     "bootstrap:free": "bash ./scripts/bootstrap-free.sh"
+  },
+  "cloudflare": {
+    "bindings": {
+      "CONTEXT_HUB_ADMIN_TOKEN": {
+        "description": "Optional bearer token used to protect your personal ctx service. Leave unset if you want an open test deployment, or generate one with `openssl rand -hex 32`."
+      }
+    }
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260303.0",
